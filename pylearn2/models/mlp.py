@@ -2083,6 +2083,13 @@ class RectifiedLinear(Linear):
 
         raise NotImplementedError()
 
+    @wraps(Layer.get_layer_monitoring_channels)
+    def get_layer_monitoring_channels(self, state_below=None,
+                                    state=None, targets=None):
+        rval = super(RectifiedLinear, self).get_layer_monitoring_channels(state_below = state_below, state = state, targets = targets)
+        rval['percentage_activated'] = T.cast(T.neq(T.zeros_like(state), state).mean(), dtype = state.dtype)
+
+        return rval
 
 class Softplus(Linear):
     """
