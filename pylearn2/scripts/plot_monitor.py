@@ -13,19 +13,27 @@ __authors__ = "Ian Goodfellow, Harm Aarts"
 __copyright__ = "Copyright 2010-2012, Universite de Montreal"
 __credits__ = ["Ian Goodfellow"]
 __license__ = "3-clause BSD"
-__maintainer__ = "Ian Goodfellow"
-__email__ = "goodfeli@iro"
+__maintainer__ = "LISA Lab"
+__email__ = "pylearn-dev@googlegroups"
 
-from pylearn2.utils import serial
+import gc
 import numpy as np
 import sys
+
+from pylearn2.utils import serial
 from theano.printing import _TagGenerator
 from pylearn2.utils.string_utils import number_aware_alphabetical_key
+from pylearn2.utils import contains_nan, contains_inf
 import argparse
 
 channels = {}
 
 def unique_substring(s, other, min_size=1):
+    """
+    .. todo::
+
+        WRITEME
+    """
     size = min(len(s), min_size)
     while size <= len(s):
         for pos in xrange(0,len(s)-size+1):
@@ -42,9 +50,20 @@ def unique_substring(s, other, min_size=1):
     return s
 
 def unique_substrings(l, min_size=1):
-    return [unique_substring(s, [x for x in l if x is not s], min_size) for s in l]
+    """
+    .. todo::
+
+        WRITEME
+    """
+    return [unique_substring(s, [x for x in l if x is not s], min_size)
+            for s in l]
 
 def main():
+    """
+    .. todo::
+
+        WRITEME
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--out")
     parser.add_argument("model_paths", nargs='+')
@@ -57,17 +76,20 @@ def main():
     import matplotlib.pyplot as plt
 
     print 'generating names...'
-    model_names = [model_path.replace('.pkl', '!') for model_path in model_paths]
+    model_names = [model_path.replace('.pkl', '!') for model_path in
+            model_paths]
     model_names = unique_substrings(model_names, min_size=10)
-    model_names = [model_name.replace('!','') for model_name in model_names]
+    model_names = [model_name.replace('!','') for model_name in
+            model_names]
     print '...done'
 
     for i, arg in enumerate(model_paths):
         try:
             model = serial.load(arg)
-        except:
+        except Exception:
             if arg.endswith('.yaml'):
-                print >> sys.stderr, arg+" is a yaml config file, you need to load a trained model."
+                print >> sys.stderr, arg + " is a yaml config file," + \
+                "you need to load a trained model."
                 quit(-1)
             raise
         this_model_channels = model.monitor.channels
@@ -79,14 +101,18 @@ def main():
 
         for channel in this_model_channels:
             channels[channel+postfix] = this_model_channels[channel]
+        del model
+        gc.collect()
 
 
     while True:
-#Make a list of short codes for each channel so user can specify them easily
+        # Make a list of short codes for each channel so user can specify them
+        # easily
         tag_generator = _TagGenerator()
         codebook = {}
         sorted_codes = []
-        for channel_name in sorted(channels, key = number_aware_alphabetical_key):
+        for channel_name in sorted(channels,
+                key = number_aware_alphabetical_key):
             code = tag_generator.get_tag()
             codebook[code] = channel_name
             codebook['<'+channel_name+'>'] = channel_name
@@ -99,19 +125,23 @@ def main():
             print "there are no channels to plot"
             break
 
-        #if there is more than one channel in the monitor ask which ones to plot
+        # If there is more than one channel in the monitor ask which ones to
+        # plot
         prompt = len(channels.values()) > 1
 
         if prompt:
 
-            #Display the codebook
+            # Display the codebook
             for code in sorted_codes:
                 print code + '. ' + codebook[code]
 
             print
 
-            print "Put e, b, s or h in the list somewhere to plot epochs, batches, seconds, or hours, respectively."
-            response = raw_input('Enter a list of channels to plot (example: A, C,F-G, h, <test_err>) or q to quit or o for options: ')
+            print "Put e, b, s or h in the list somewhere to plot " + \
+                    "epochs, batches, seconds, or hours, respectively."
+            response = raw_input('Enter a list of channels to plot ' + \
+                    '(example: A, C,F-G, h, <test_err>) or q to quit' + \
+                    ' or o for options: ')
 
             if response == 'o':
                 print '1: smooth all channels'
@@ -192,47 +222,26 @@ def main():
         else:
             final_codes ,= set(codebook.keys())
 
-        plt.figure()
-        #Make 2 subplots so the legend gets a plot to itself and won't cover up the plot
-        ax = plt.subplot(1,2,1)
-
-        # Grow current axis' width by 30%
-        box = ax.get_position()
-
-        try:
-            x0 = box.x0
-            y0 = box.y0
-            width = box.width
-            height = box.height
-        except:
-            x0, width, y0, height = box
-
-
-        ax.set_position([x0, y0, width * 1.3, height])
-
-        ax.ticklabel_format( scilimits = (-3,3), axis = 'both')
-
-        plt.xlabel('# '+x_axis+'s')
-
-
         colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k']
         styles = list(colors)
         styles += [color+'--' for color in colors]
         styles += [color+':' for color in colors]
 
-        #plot the requested channels
+        fig = plt.figure()
+        ax = plt.subplot(1,1,1)
+
+        # plot the requested channels
         for idx, code in enumerate(sorted(final_codes)):
 
             channel_name= codebook[code]
-
             channel = channels[channel_name]
 
             y = np.asarray(channel.val_record)
 
-            if np.any(np.isnan(y)):
+            if contains_nan(y):
                 print channel_name + ' contains NaNs'
 
-            if np.any(np.isinf(y)):
+            if contains_inf(y):
                 print channel_name + 'contains infinite values'
 
             if x_axis == 'example':
@@ -253,15 +262,20 @@ def main():
                 assert False
 
 
-            plt.plot( x,
+            ax.plot( x,
                       y,
                       styles[idx % len(styles)],
-                      marker = '.',  # added by mkg; adds point markers to lines
+                      marker = '.', # add point margers to lines
                       label = channel_name)
 
+        plt.xlabel('# '+x_axis+'s')
+        ax.ticklabel_format( scilimits = (-3,3), axis = 'both')
 
-        plt.legend(bbox_to_anchor=(1.05, 1),  loc=2, borderaxespad=0.)
-
+        handles, labels = ax.get_legend_handles_labels()
+        lgd = ax.legend(handles, labels, loc='upper center',
+                bbox_to_anchor=(0.5,-0.1))
+        # 0.046 is the size of 1 legend box
+        fig.subplots_adjust(bottom=0.11 + 0.046 * len(final_codes))
 
         if options.out is None:
           plt.show()

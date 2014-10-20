@@ -3,7 +3,7 @@ __authors__ = "Ian Goodfellow"
 __copyright__ = "Copyright 2012, Universite de Montreal"
 __credits__ = ["Ian Goodfellow"]
 __license__ = "3-clause BSD"
-__maintainer__ = "Ian Goodfellow"
+__maintainer__ = "LISA Lab"
 """
 
 Usage: python show_samples <path_to_a_saved_DBM.pkl>
@@ -168,7 +168,7 @@ while True:
             try:
                 x = int(x)
                 break
-            except:
+            except ValueError:
                 print 'Invalid input, try again'
 
     for i in xrange(x):

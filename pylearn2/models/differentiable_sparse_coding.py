@@ -6,15 +6,20 @@ __authors__ = "Ian Goodfellow"
 __copyright__ = "Copyright 2010-2012, Universite de Montreal"
 __credits__ = ["Ian Goodfellow"]
 __license__ = "3-clause BSD"
-__maintainer__ = "Ian Goodfellow"
-__email__ = "goodfeli@iro"
+__maintainer__ = "LISA Lab"
+__email__ = "pylearn-dev@googlegroups"
 
+import logging
 import numpy as N
 import theano.tensor as T
 
 import theano
 from theano import function, shared, config
 floatX = config.floatX
+from pylearn2.utils.rng import make_np_rng
+
+
+logger = logging.getLogger(__name__)
 
 
 class DifferentiableSparseCoding(object):
@@ -22,15 +27,20 @@ class DifferentiableSparseCoding(object):
     .. todo::
 
         WRITEME
+
+    Parameters
+    ----------
+    nvis : WRITEME
+    nhid : WRITEME
+    init_lambda : WRITEME
+    init_p : WRITEME
+    init_alpha : WRITEME
+    learning_rate : WRITEME
     """
+
     def __init__(self, nvis, nhid,
             init_lambda,
             init_p, init_alpha, learning_rate):
-        """
-        .. todo::
-
-            WRITEME
-        """
         self.nvis = int(nvis)
         self.nhid = int(nhid)
         self.init_lambda = float(init_lambda)
@@ -42,7 +52,7 @@ class DifferentiableSparseCoding(object):
 
         self.predictor_learning_rate = self.learning_rate
 
-        self.rng = N.random.RandomState([1,2,3])
+        self.rng = make_np_rng(None, [1,2,3], which_method="randn")
 
         self.error_record = []
         self.ERROR_RECORD_MODE_MONITORING = 0
@@ -280,11 +290,12 @@ class DifferentiableSparseCoding(object):
 
             WRITEME
         """
-        print 'running on monitoring set'
+        logger.info('running on monitoring set')
         assert self.error_record_mode == self.ERROR_RECORD_MODE_MONITORING
 
         w = self.W.get_value(borrow=True)
-        print 'weights summary: '+str( (w.min(),w.mean(),w.max()))
+        logger.info('weights summary: '
+                    '({0}, {1}, {2})'.format(w.min(), w.mean(), w.max()))
 
         errors = []
 
@@ -307,7 +318,7 @@ class DifferentiableSparseCoding(object):
             self.make_instrument_report()
             self.instrument_record.end_report()
             self.clear_instruments()
-        print 'monitoring set done'
+        logger.info('monitoring set done')
 
     def infer_h(self, v):
         """

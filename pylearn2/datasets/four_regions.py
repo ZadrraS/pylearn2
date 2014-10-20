@@ -13,6 +13,7 @@ __email__ = "wardefar@iro"
 import numpy as np
 from theano import config
 from pylearn2.datasets import DenseDesignMatrix
+from pylearn2.utils.rng import make_np_rng
 
 
 def _four_regions_labels(points):
@@ -66,6 +67,7 @@ def _four_regions_labels(points):
 
 
 class FourRegions(DenseDesignMatrix):
+
     """
     Constructs a dataset based on the four regions
     benchmark by sampling random uniform points in [-1, 1]^2
@@ -94,8 +96,7 @@ class FourRegions(DenseDesignMatrix):
 
             WRITEME
         """
-        if not hasattr(rng, 'uniform'):
-            rng = np.random.RandomState(rng)
+        rng = make_np_rng(rng, self._default_seed, which_method='uniform')
         X = rng.uniform(-1, 1, size=(num_examples, 2))
         if not one_hot:
             y = _four_regions_labels(X)

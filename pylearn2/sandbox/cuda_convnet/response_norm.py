@@ -48,7 +48,9 @@ The copyright and licensing notice for this code is reproduced below:
 import theano
 from theano.sandbox.cuda import CudaNdarrayType
 from theano.sandbox.cuda.basic_ops import as_cuda_ndarray_variable
+from theano.sandbox.cuda.basic_ops import gpu_contiguous
 from theano.gof import Apply, local_optimizer, TopoOptimizer
+
 from pylearn2.sandbox.cuda_convnet.base_acts import BaseActs
 from .code_templates import (
     contiguity_check, dimension_check, output_same_shape,
@@ -58,6 +60,10 @@ from .code_templates import (
 
 class CrossMapNorm(BaseActs):
     """
+    .. todo::
+
+        WRITEME
+
     Parameters
     ----------
     size_f : int
@@ -121,13 +127,28 @@ class CrossMapNorm(BaseActs):
         self._blocked = bool(blocked)
 
     def __hash__(self):
+        """
+        .. todo::
+
+            WRITEME
+        """
         return hash((self._size_f, self._add_scale, self._pow_scale,
                      self._blocked))
 
     def __eq__(self, other):
+        """
+        .. todo::
+
+            WRITEME
+        """
         return type(self) == type(other) and hash(self) == hash(other)
 
     def make_node(self, images):
+        """
+        .. todo::
+
+            WRITEME
+        """
         if not isinstance(images.type, CudaNdarrayType):
             raise TypeError("CrossMapNorm: expected images.type to be CudaNdarrayType, "
                     "got " + str(images.type))
@@ -142,6 +163,11 @@ class CrossMapNorm(BaseActs):
         return Apply(self, [images], [targets, denoms])
 
     def c_code(self, node, name, inputs, outputs, sub):
+        """
+        .. todo::
+
+            WRITEME
+        """
         images, = inputs
         targets, denoms = outputs
         fail = sub['fail']
@@ -189,26 +215,51 @@ class CrossMapNorm(BaseActs):
         return rval
 
     def grad(self, inputs, dout):
+        """
+        .. todo::
+
+            WRITEME
+        """
         images, = inputs
         acts, denoms = self(images)
         dout, _ = dout  # Ignore the gradient on "denoms"
         dout = as_cuda_ndarray_variable(dout)
+
+        # dout must be contiguous, but it isn't always so, depending
+        # of what is done on output of this node.
+        dout = gpu_contiguous(dout)
         grad_op = CrossMapNormUndo(self._size_f, self._add_scale,
                                    self._pow_scale, self._blocked,
                                    inplace=False)
         return [grad_op(images, acts, denoms, dout)[0]]
 
     def __str__(self):
+        """
+        .. todo::
+
+            WRITEME
+        """
         return (self.__class__.__name__ +
                 "[size_f=%d,add_scale=%f,pow_scale=%f,blocked=%s]"
                 % (self._size_f, self._add_scale, self._pow_scale,
                    self._blocked))
 
     def c_code_cache_version(self):
+        """
+        .. todo::
+
+            WRITEME
+        """
         return (6,)
 
 
 class CrossMapNormUndo(CrossMapNorm):
+    """
+    .. todo::
+
+        WRITEME
+    """
+
     def __init__(self, size_f, add_scale, pow_scale, blocked, inplace=False):
         self._scale_targets = 0
         self._scale_outputs = 1
@@ -219,10 +270,20 @@ class CrossMapNormUndo(CrossMapNorm):
                                                blocked)
 
     def __hash__(self):
+        """
+        .. todo::
+
+            WRITEME
+        """
         super_hash = super(CrossMapNormUndo, self).__hash__()
         return hash((super_hash, self._inplace))
 
     def make_node(self, images, acts, denoms, dout):
+        """
+        .. todo::
+
+            WRITEME
+        """
         if not isinstance(images.type, CudaNdarrayType):
             inputs = images, acts, denoms, dout
             names = "images", "acts", "denoms", "dout"
@@ -247,6 +308,11 @@ class CrossMapNormUndo(CrossMapNorm):
         return Apply(self, [images, acts, denoms, dout], [targets, out_acts])
 
     def c_code(self, node, name, inputs, outputs, sub):
+        """
+        .. todo::
+
+            WRITEME
+        """
         images, acts, denoms, dout = inputs
         targets, out_acts = outputs
         fail = sub['fail']
@@ -348,13 +414,28 @@ class CrossMapNormUndo(CrossMapNorm):
         return rval % locals()
 
     def grad(self, inputs, dout):
+        """
+        .. todo::
+
+            WRITEME
+        """
         raise NotImplementedError()
 
     @property
     def inplace(self):
+        """
+        .. todo::
+
+            WRITEME
+        """
         return self._inplace
 
     def as_inplace(self):
+        """
+        .. todo::
+
+            WRITEME
+        """
         if self._inplace:
             raise ValueError("%s instance is already inplace, can't convert" %
                              self.__class__.__name__)
@@ -362,17 +443,32 @@ class CrossMapNormUndo(CrossMapNorm):
                               self._blocked, inplace=True)
 
     def __str__(self):
+        """
+        .. todo::
+
+            WRITEME
+        """
         return (self.__class__.__name__ +
                 "[size_f=%d,add_scale=%.2f,pow_scale=%.2f,blocked=%s,inplace=%s]"
                 % (self._size_f, self._add_scale, self._pow_scale,
                    self._blocked, self._inplace))
 
     def c_code_cache_version(self):
+        """
+        .. todo::
+
+            WRITEME
+        """
         return (8,)
 
 
 @local_optimizer([CrossMapNormUndo])
 def local_crossmapnormundo_inplace(node):
+    """
+    .. todo::
+
+        WRITEME
+    """
     if isinstance(node.op, CrossMapNormUndo) and not node.op.inplace:
         new_op = node.op.as_inplace()
         new_node = new_op(*node.inputs)

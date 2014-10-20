@@ -83,15 +83,14 @@ class LinearTransform(object):
     .. todo::
 
         WRITEME
+
+    Parameters
+    ----------
+    params : list
+        List of theano shared variables that parametrize the linear
+        transformation
     """
     def __init__(self, params):
-        """
-        Parameters
-        ----------
-        params : list
-            List of theano shared variables that parametrize the linear \
-            transformation
-        """
         self.set_params(params)
 
     def set_params(self, params):
@@ -387,13 +386,12 @@ class TransposeTransform(LinearTransform):
     .. todo::
 
         WRITEME
+
+    Parameters
+    ----------
+    base : WRITEMe
     """
     def __init__(self, base):
-        """
-        .. todo::
-
-            WRITEME
-        """
         super(TransposeTransform, self).__init__([])
         self.base = base
 
@@ -543,9 +541,8 @@ class TransposeTransform(LinearTransform):
         # and there *is* no tile_rows, we fall back on this.
         return self.base.tile_columns()
 
-
-# TODO : Get rid of `if 0`'s in some way
-if 0: # needs to be brought up to date with LinearTransform method names
+use_concat_class = 0
+if use_concat_class: # needs to be brought up to date with LinearTransform method names
     class Concat(LinearTransform):
         """
         Form a linear map of the form [A B ... Z].
@@ -555,6 +552,11 @@ if 0: # needs to be brought up to date with LinearTransform method names
         The col_shape defaults to being the concatenation of flattened output from
         each of A,B,...Z, but a col_shape tuple specified via the constructor will
         reshape that vector.
+
+        Parameters
+        ----------
+        Wlist : WRITEME
+        col_shape : WRITEME
         """
         def __init__(self, Wlist, col_shape=None):
             super(Concat, self).__init__([])
@@ -631,8 +633,8 @@ if 0: # needs to be brought up to date with LinearTransform method names
             for W in self._Wlist:
                 W.print_status()
 
-
-if 0: # needs to be brought up to date with LinearTransform method names
+use_sum_class = 0
+if use_sum_class: # needs to be brought up to date with LinearTransform method names
     class Sum(LinearTransform):
         def __init__(self, terms):
             self.terms = terms
@@ -659,8 +661,8 @@ if 0: # needs to be brought up to date with LinearTransform method names
         def _tile_columns(self):
             raise NotImplementedError('TODO')
 
-
-if 0: # This is incomplete
+use_compose_class = 0
+if use_compose_class: # This is incomplete
     class Compose(LinearTransform):
         """ For linear transformations [A,B,C]
         this represents the linear transformation A(B(C(x))).

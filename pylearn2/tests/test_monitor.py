@@ -1,10 +1,13 @@
 import numpy as np
 import warnings
+from nose.tools import assert_raises
 
 from theano.compat import exc_message
+from theano.compat.python2x import OrderedDict
 from theano import shared
 from theano import tensor as T
 
+from pylearn2.costs.cost import Cost
 from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
 from pylearn2.models.model import Model
 from pylearn2.models.s3c import S3C, E_Step, Grad_M_Step
@@ -15,7 +18,7 @@ from pylearn2.monitor import push_monitor
 from pylearn2.space import VectorSpace
 from pylearn2.testing.datasets import ArangeDataset
 from pylearn2.training_algorithms.default import DefaultTrainingAlgorithm
-from pylearn2.utils.iteration import _iteration_schemes
+from pylearn2.utils.iteration import _iteration_schemes, has_uniform_batch_size
 from pylearn2.utils import py_integer_types
 from pylearn2.utils.serial import from_string
 from pylearn2.utils.serial import to_string
@@ -26,6 +29,9 @@ from pylearn2.testing.prereqs import ReadVerifyPrereq
 class DummyModel(Model):
     def  __init__(self, num_features):
         self.input_space = VectorSpace(num_features)
+
+    def get_default_cost(self):
+        return DummyCost()
 
 
 class DummyDataset(DenseDesignMatrix):
@@ -40,6 +46,12 @@ class DummyDataset(DenseDesignMatrix):
                 "functionality. If the Monitor tries to serialize a "
                 "Dataset, that is an error.")
 
+class DummyCost(Cost):
+    def get_data_specs(self, model):
+        return (VectorSpace(1), 'dummy')
+    
+    def expr(self, model, cost_ipt):
+        return cost_ipt.sum()
 
 def test_channel_scaling_sequential():
     def channel_scaling_checker(num_examples, mode, num_batches, batch_size):
@@ -206,6 +218,12 @@ def test_revisit():
                 if num_mon_batches is None and mode in ['random_uniform', 'random_slice']:
                     continue
 
+                if has_uniform_batch_size(mode) and \
+                   num_mon_batches is not None and \
+                   num_mon_batches * mon_batch_size > num_examples:
+
+                    num_mon_batches = int(num_examples / float(mon_batch_size))
+
                 model = DummyModel(1)
                 monitor = Monitor.get_monitor(model)
 
@@ -217,8 +235,11 @@ def test_revisit():
                         batch_size=mon_batch_size, num_batches=num_mon_batches,
                         seed = 0)
 
-                if num_mon_batches is None:
-                    num_mon_batches = int(np.ceil(float(num_examples) / float(mon_batch_size)))
+                if has_uniform_batch_size(mode) and num_mon_batches is None:
+                    num_mon_batches = int(num_examples / float(mon_batch_size))
+                elif num_mon_batches is None:
+                    num_mon_batches = int(np.ceil(float(num_examples) /
+                                          float(mon_batch_size)))
 
                 batches = [ None ] * num_mon_batches
                 visited = [ False ] * num_mon_batches
@@ -357,6 +378,37 @@ def test_serialize_twice():
     y = to_string(monitor)
 
     assert x == y
+
+def test_save_load_save():
+
+    """
+    Test that a monitor can be saved, then loaded, and then the loaded
+    copy can be saved again.
+    This only tests that the serialization and deserialization processes
+    don't raise an exception. It doesn't test for correctness at all.
+    """
+
+    model = DummyModel(1)
+    monitor = Monitor.get_monitor(model)
+
+    num_examples = 2
+    num_features = 3
+    num_batches = 1
+    batch_size = 2
+
+    dataset = DummyDataset(num_examples, num_features)
+    monitor.add_dataset(dataset=dataset,
+                            num_batches=num_batches, batch_size=batch_size)
+    vis_batch = T.matrix()
+    mean = vis_batch.mean()
+    data_specs = (monitor.model.get_input_space(),
+                  monitor.model.get_input_source())
+    monitor.add_channel(name='mean', ipt=vis_batch, val=mean, dataset=dataset,
+                        data_specs=data_specs)
+
+    saved = to_string(monitor)
+    monitor = from_string(saved)
+    saved_again = to_string(monitor)
 
 def test_valid_after_serialize():
 
@@ -531,6 +583,22 @@ def test_transfer_experience():
     assert monitor.get_epochs_seen() == 1
 
 
+def test_extra_costs():
+
+    # Makes sure Monitor.setup checks type of extra_costs
+
+    num_features = 3
+    model = DummyModel(num_features=num_features)
+    dataset = DummyDataset(num_examples=2, num_features=num_features)
+    monitor = Monitor.get_monitor(model)
+    extra_costs = [model.get_default_cost()]
+    assert_raises(AssertionError, monitor.setup, dataset, 
+                  model.get_default_cost(), 1, extra_costs=extra_costs)
+
+    extra_costs = OrderedDict()
+    extra_costs['Cost'] = model.get_default_cost()
+    monitor.setup(dataset, model.get_default_cost(), 1, 
+                  extra_costs=extra_costs)
 
 
 if __name__ == '__main__':

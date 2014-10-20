@@ -7,12 +7,13 @@ __authors__ = "Ian Goodfellow"
 __copyright__ = "Copyright 2010-2012, Universite de Montreal"
 __credits__ = ["Ian Goodfellow"]
 __license__ = "3-clause BSD"
-__maintainer__ = "Ian Goodfellow"
-__email__ = "goodfeli@iro"
+__maintainer__ = "LISA Lab"
+__email__ = "pylearn-dev@googlegroups"
 
 from theano.sandbox.rng_mrg import MRG_RandomStreams
 
-from pylearn2.base import Block
+from pylearn2.blocks import Block
+from pylearn2.utils.rng import make_theano_rng
 
 
 class SampleBernoulli(Block):
@@ -20,19 +21,18 @@ class SampleBernoulli(Block):
     .. todo::
 
         WRITEME
+
+    Parameters
+    ----------
+    theano_rng : WRITEME
+    seed : WRITEME
+    input_space : WRITEME
     """
     def __init__(self, theano_rng = None, seed=None, input_space=None):
-        """
-        .. todo::
-
-            WRITEME
-        """
         super(SampleBernoulli, self).__init__()
         assert theano_rng is None or seed is None
-        if theano_rng is None:
-            if seed is None:
-                seed = 2012 + 11 + 22
-            theano_rng = MRG_RandomStreams(seed)
+        theano_rng = make_theano_rng(theano_rng if theano_rng is not None else seed,
+                                     2012+11+22, which_method='binomial')
         self.__dict__.update(locals())
         del self.self
 

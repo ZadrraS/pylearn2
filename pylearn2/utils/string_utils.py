@@ -3,15 +3,17 @@
 import os
 import re
 
-from pylearn2.datasets.exc import NoDataPathError
-from pylearn2.utils.exc import EnvironmentVariableError
+from pylearn2.utils.exc import EnvironmentVariableError, NoDataPathError
+from pylearn2.utils.exc import reraise_as
 from pylearn2.utils.python26 import cmp_to_key
+from pylearn2.utils.common_strings import environment_variable_essay
 
 
 def preprocess(string, environ=None):
     """
     Preprocesses a string, by replacing `${VARNAME}` with
-    `os.environ['VARNAME']`
+    `os.environ['VARNAME']` and ~ with the path to the user's
+    home directory
 
     Parameters
     ----------
@@ -48,13 +50,15 @@ def preprocess(string, environ=None):
                    else os.environ[varname])
         except KeyError:
             if varname == 'PYLEARN2_DATA_PATH':
-                raise NoDataPathError()
+                reraise_as(NoDataPathError())
             if varname == 'PYLEARN2_VIEWER_COMMAND':
-                raise EnvironmentVariableError(environment_variable_essay)
+                reraise_as(EnvironmentVariableError(
+                    viewer_command_error_essay + environment_variable_essay)
+                )
 
-            raise ValueError('Unrecognized environment variable "' +
-                             varname + '". Did you mean ' +
-                             match(varname, os.environ.keys()) + '?')
+            reraise_as(ValueError('Unrecognized environment variable "' +
+                                  varname + '". Did you mean ' +
+                                  match(varname, os.environ.keys()) + '?'))
 
         rval.append(val)
 
@@ -62,13 +66,16 @@ def preprocess(string, environ=None):
 
     rval = ''.join(rval)
 
+    string = os.path.expanduser(string)
+
     return rval
 
 
 def find_number(s):
     """
-    Returns None if there are no numbers in the string. Otherwise, returns the
-    range of characters occupied by the first number in the string.
+    Returns None if there are no numbers in the string. Otherwise,
+    returns the range of characters occupied by the first number in
+    the string.
 
     Parameters
     ----------
@@ -88,8 +95,8 @@ def find_number(s):
 
 def tokenize_by_number(s):
     """
-    Splits a string into a list of tokens. Each is either a string containing
-    no numbers or a float.
+    Splits a string into a list of tokens. Each is either a string
+    containing no numbers or a float.
 
     Parameters
     ----------
@@ -188,10 +195,10 @@ def match(wrong, candidates):
 
     Notes
     -----
-    This should be used with a small number of candidates and a high potential
-    edit distance (i.e. use it to correct a wrong filename in a directory,
-    wrong class name in a module, etc.) Don't use it to correct small typos of
-    freeform natural language words.
+    This should be used with a small number of candidates and a high
+    potential edit distance (i.e. use it to correct a wrong filename in
+    a directory, wrong class name in a module, etc.) Don't use it to
+    correct small typos of freeform natural language words.
     """
 
     assert len(candidates) > 0
@@ -259,16 +266,16 @@ def censor_non_alphanum(s):
     return ''.join(censor(ch) for ch in s)
 
 
-environment_variable_essay = """
-PYLEARN2_VIEWER_COMMAND not defined. PLEASE READ THE FOLLOWING MESSAGE CAREFULLY
-TO SET UP THIS ENVIRONMENT VARIABLE:
+viewer_command_error_essay = """
+PYLEARN2_VIEWER_COMMAND not defined. PLEASE READ THE FOLLOWING MESSAGE
+CAREFULLY TO SET UP THIS ENVIRONMENT VARIABLE:
+pylearn2 uses an external program to display images. Because different
+systems have different image programs available, pylearn2 requires the
+ user to specify what image viewer program to use.
 
-pylearn2 uses an external program to display images. Because different systems have different
-image programs available, pylearn2 requires the user to specify what image viewer program to
-use.
-
-You need to choose an image viewer program that pylearn2 should use. Then tell pylearn2 to use
-that image viewer program by defining your PYLEARN2_VIEWER_COMMAND environment variable.
+You need to choose an image viewer program that pylearn2 should use.
+Then tell pylearn2 to use that image viewer program by defining your
+PYLEARN2_VIEWER_COMMAND environment variable.
 
 You need to choose PYLEARN_VIEWER_COMMAND such that running
 
@@ -278,29 +285,24 @@ in a command prompt on your machine will do the following:
     -open an image viewer in a new process.
     -not return until you have closed the image.
 
+Platform-specific recommendations follow.
+
+Linux
+=====
+
 Acceptable commands include:
     gwenview
     eog --new-instance
 
-This is assuming that you have gwenview or a version of eog that supports --new-instance
-installed on your machine. If you don't, install one of those, or figure out a command
-that has the above properties that is available from your setup.
+This is assuming that you have gwenview or a version of eog that supports
+--new-instance installed on your machine. If you don't, install one of those,
+or figure out a command that has the above properties that is available from
+your setup.
 
-On most linux setups, you can define your environment variable by adding this line to your
-~/.bashrc file:
+Mac OS X
+========
 
-export PYLEARN2_VIEWER_COMMAND="eog --new-instance"
+Acceptable commands include:
+    open -Wn
 
-*** YOU MUST INCLUDE THE WORD "export". DO NOT JUST ASSIGN TO THE ENVIRONMENT VARIABLE ***
-If you do not include the word "export", the environment variable will be set in your
-bash shell, but will not be visible to processes that you launch from it, like the python
-interpreter.
-
-Don't forget that changes from your .bashrc file won't apply until you run
-
-source ~/.bashrc
-
-or open a new terminal window. If you're seeing this from an ipython notebook
-you'll need to restart the ipython notebook, or maybe modify os.environ from
-an ipython cell.
 """

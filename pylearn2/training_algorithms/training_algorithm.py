@@ -1,8 +1,4 @@
-"""
-.. todo::
-
-    WRITEME
-"""
+"""Module defining the interface for training algorithms."""
 from pylearn2.datasets.dataset import Dataset
 
 class TrainingAlgorithm(object):
@@ -10,6 +6,7 @@ class TrainingAlgorithm(object):
     An abstract superclass that defines the interface of training
     algorithms.
     """
+
     def _register_update_callbacks(self, update_callbacks):
         """
         .. todo::
@@ -33,10 +30,10 @@ class TrainingAlgorithm(object):
         Parameters
         ----------
         model : object
-            Object that implements the Model interface defined in \
+            Object that implements the Model interface defined in
             `pylearn2.models`.
         dataset : object
-            Object that implements the Dataset interface defined in \
+            Object that implements the Dataset interface defined in
             `pylearn2.datasets`.
 
         Notes
@@ -54,7 +51,7 @@ class TrainingAlgorithm(object):
         Parameters
         ----------
         dataset : object
-            Object implementing the dataset interface defined in \
+            Object implementing the dataset interface defined in
             `pylearn2.datasets.dataset.Dataset`.
 
         Returns
@@ -65,12 +62,14 @@ class TrainingAlgorithm(object):
 
     def _set_monitoring_dataset(self, monitoring_dataset):
         """
-        WRITEME
+        .. todo::
+
+            WRITEME
 
         Parameters
         ----------
         monitoring_dataset : None or Dataset or dict
-            None for no monitoring, or Dataset, to monitor on one dataset, \
+            None for no monitoring, or Dataset, to monitor on one dataset,
             or dict mapping string names to Datasets
         """
         if isinstance(monitoring_dataset, Dataset):
@@ -99,3 +98,39 @@ class TrainingAlgorithm(object):
         """
         raise NotImplementedError(str(type(self))+" does not implement " +
                                   "continue_learning.")
+
+    def _synchronize_batch_size(self, model):
+        """
+        Adapts `self.batch_size` to be consistent with `model`
+
+        Parameters
+        ----------
+        model : Model
+            The model to synchronize the batch size with
+        """
+        batch_size = self.batch_size
+        if hasattr(model, "force_batch_size"):
+            if model.force_batch_size > 0:
+                if batch_size is not None:
+                    if batch_size != model.force_batch_size:
+                        if self.set_batch_size:
+                            model.set_batch_size(batch_size)
+                        else:
+                            raise ValueError("batch_size argument to " +
+                                             str(type(self)) +
+                                             "conflicts with model's " +
+                                             "force_batch_size attribute")
+                else:
+                    self.batch_size = model.force_batch_size
+        if self.batch_size is None:
+            raise NoBatchSizeError()
+
+class NoBatchSizeError(ValueError):
+    """
+    An exception raised when the user does not specify a batch size anywhere.
+    """
+    def __init__(self):
+        super(NoBatchSizeError, self).__init__("Neither the "
+                "TrainingAlgorithm nor the model were given a specification "
+                "of the batch size.")
+

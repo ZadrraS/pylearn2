@@ -1,15 +1,14 @@
 """
-.. todo::
-
-    WRITEME
+Spike-and-slab sparse coding (S3C)
 """
 __authors__ = "Ian Goodfellow"
 __copyright__ = "Copyright 2011, Universite de Montreal"
 __credits__ = ["Ian Goodfellow"]
 __license__ = "3-clause BSD"
-__maintainer__ = "Ian Goodfellow"
+__maintainer__ = "LISA Lab"
 
 
+import logging
 import time
 import warnings
 
@@ -21,17 +20,23 @@ from theano.gof.op import get_debug_values, debug_error_message, debug_assert
 import theano.tensor as T
 
 from pylearn2.utils import make_name, sharedX, as_floatX
-from pylearn2.base import Block
+from pylearn2.blocks import Block
 from pylearn2.expr.information_theory import entropy_binary_vector
 from pylearn2.models import Model
 from pylearn2.space import VectorSpace
+from pylearn2.utils.rng import make_np_rng
+from pylearn2.utils import contains_nan
+from pylearn2.utils import isfinite
+from pylearn2.expr.basic import (full_min,
+        full_max, numpy_norms, theano_norms)
 
-warnings.warn('s3c changing the recursion limit')
+
+logger = logging.getLogger(__name__)
+
+logger.debug('s3c changing the recursion limit')
 import sys
 sys.setrecursionlimit(50000)
 
-from pylearn2.expr.basic import (full_min,
-        full_max, numpy_norms, theano_norms)
 
 def rotate_towards(old_W, new_W, new_coeff):
     """
@@ -39,19 +44,23 @@ def rotate_towards(old_W, new_W, new_coeff):
 
         WRITEME properly
 
-    old_W: every column is a unit vector
+    For each column, rotates old_w toward new_w by new_coeff * theta,
+    where theta is the angle between them
 
-    for each column, rotates old_w toward
-        new_w by new_coeff * theta where
-        theta is the angle between them
+    Parameters
+    ----------
+    old_W : WRITEME
+        every column is a unit vector
+    new_W : WRITEME
+    new_coeff : WRITEME
     """
 
     norms = theano_norms(new_W)
 
-    #update, scaled back onto unit sphere
+    # update, scaled back onto unit sphere
     scal_points = new_W / norms.dimshuffle('x',0)
 
-    #dot product between scaled update and current W
+    # dot product between scaled update and current W
     dot_update = (old_W * scal_points).sum(axis=0)
 
     theta = T.arccos(dot_update)
@@ -72,27 +81,30 @@ def rotate_towards(old_W, new_W, new_coeff):
 
 class SufficientStatistics:
     """
-    The SufficientStatistics class computes several sufficient statistics of a
-    minibatch of examples / variational parameters. This is mostly for
-    convenience since several expressions are easy to express in terms of these
-    same sufficient statistics. Also, re-using the same expression for the
-    sufficient statistics in multiple code locations can reduce theano
-    compilation time. The current version of the S3C code no longer supports
-    features like decaying sufficient statistics since these were not found to
-    be particularly beneficial relative to the burden of computing the
-    O(nhid^2) second moment matrix. The current version of the code merely
-    computes the sufficient statistics apart from the second moment matrix as a
-    notational convenience. Expressions that most naturally are expressed in
-    terms of the second moment matrix are now written with a different order of
-    operations that avoids O(nhid^2) operations but whose dependence on the
-    dataset cannot be expressed in terms only of sufficient statistics.
-    """
-    def __init__(self, d):
-        """
-        .. todo::
+    The SufficientStatistics class computes several sufficient
+    statistics of a minibatch of examples / variational parameters.
 
-            WRITEME
-        """
+    This is mostly for convenience since several expressions are easy
+    to express in terms of these same sufficient statistics. Also,
+    re-using the same expression for the sufficient statistics in
+    multiple code locations can reduce theano compilation time. The
+    current version of the S3C code no longer supports features like
+    decaying sufficient statistics since these were not found to be
+    particularly beneficial relative to the burden of computing the
+    O(nhid^2) second moment matrix. The current version of the code
+    merely computes the sufficient statistics apart from the second
+    moment matrix as a notational convenience. Expressions that most
+    naturally are expressed in terms of the second moment matrix are
+    now written with a different order of operations that avoids
+    O(nhid^2) operations but whose dependence on the dataset cannot be
+    expressed in terms only of sufficient statistics.
+
+    Parameters
+    ----------
+    d : WRITEME
+    """
+
+    def __init__(self, d):
         self. d = {}
         for key in d:
             self.d[key] = d[key]
@@ -106,16 +118,23 @@ class SufficientStatistics:
 
             WRITEME properly
 
-        needed_stats: a set of string names of the statistics to include
-
-        V: a num_examples x nvis matrix of input examples
-        H_hat: a num_examples x nhid matrix of \hat{h} variational parameters
-        S_hat: variational parameters for expectation of s given h=1
-        var_s0_hat: variational parameters for variance of s given h=0
-                    (only a vector of length nhid, since this is the same for
-                    all inputs)
-        var_s1_hat: variational parameters for variance of s given h=1
-                    (again, a vector of length nhid)
+        Parameters
+        ----------
+        needed_stats : WRITEME
+            a set of string names of the statistics to include
+        V : WRITEME
+            a num_examples x nvis matrix of input examples
+        H_hat : WRITEME
+            a num_examples x nhid matrix of \hat{h} variational parameters
+        S_hat : WRITEME
+            variational parameters for expectation of s given h=1
+        var_s0_hat : WRITEME
+            variational parameters for variance of s given h=0
+            (only a vector of length nhid, since this is the same for
+            all inputs)
+        var_s1_hat : WRITEME
+            variational parameters for variance of s given h=1
+            (again, a vector of length nhid)
         """
 
         m = T.cast(V.shape[0],config.floatX)
@@ -192,99 +211,129 @@ class S3C(Model, Block):
     """
     If you use S3C in published work, please cite:
 
-        Large-Scale Feature Learning With Spike-and-Slab Sparse Coding.
-        Goodfellow, I., Courville, A., & Bengio, Y. ICML 2012.
-    """
+    Large-Scale Feature Learning With Spike-and-Slab Sparse Coding.
+    Goodfellow, I., Courville, A., & Bengio, Y. ICML 2012.
 
+    Parameters
+    ----------
+    nvis : WRITEME
+        # of visible units
+    nhid : WRITEME
+        # of hidden units
+    irange : WRITEME
+        (scalar) weights are initinialized ~U( [-irange,irange] )
+    init_bias_hid : WRITEME
+        initial value of hidden biases (scalar or vector)
+    init_B : WRITEME
+        initial value of B (scalar or vector)
+    min_B : WRITEME
+        See `max_B`
+    max_B : WRITEME
+        (scalar) learning updates to B are clipped to [min_B, max_B]
+    init_alpha : WRITEME
+        initial value of alpha (scalar or vector)
+    min_alpha : WRITEME
+        See `max_alpha`
+    max_alpha : WRITEME
+        (scalar) learning updates to alpha are clipped to [min_alpha, max_alpha]
+    init_mu : WRITEME
+        initial value of mu (scalar or vector)
+    min_mu : WRITEME
+        See `max_mu`
+    max_mu : WRITEME
+        clip mu updates to this range.
+    e_step : WRITEME
+        An E_Step object that determines what kind of E-step to do
+        if None, assumes that the S3C model is being driven by
+        a larger model, and does not generate theano functions
+        necessary for autonomous operation
+    m_step : WRITEME
+        An M_Step object that determines what kind of M-step to do
+    tied_B : WRITEME
+        if True, use a scalar times identity for the precision on visible units.
+        otherwise use a diagonal matrix for the precision on visible units
+    constrain_W_norm : bool
+        if true, norm of each column of W must be 1 at all times
+    init_unit_W : bool
+        if true, each column of W is initialized to have unit norm
+    monitor_stats : WRITEME
+        a list of sufficient statistics to monitor on the monitoring dataset
+    monitor_params : WRITEME
+        a list of parameters to monitor TODO: push this into Model base class
+    monitor_functional : WRITEME
+        if true, monitors the EM functional on the monitoring dataset
+    monitor_norms : bool
+        if true, monitors the norm of W at the end of each solve step, but before
+        blending with old W by new_coeff
+        This lets us see how much distortion is introduced by norm clipping
+        Note that unless new_coeff = 1, the post-solve norm monitored by this
+        flag will not be equal to the norm of the final parameter value, even
+        if no norm clipping is activated.
+    recycle_q : WRITEME
+        if nonzero, initializes the e-step with the output of the previous iteration's
+        e-step. obviously this should only be used if you are using the same data
+        in each batch. when recycle_q is nonzero, it should be set to the batch size.
+    disable_W_update : WRITEME
+        if true, doesn't update W (useful for experiments where you only learn the prior)
+    random_patches_src : WRITEME
+        if not None, should be a dataset
+        will set W to a batch
+    local_rf_src : Dataset, optional
+        if not None, it should be a dataset.
+        it requires the following other params:
+
+        - local_rf_shape : a 2 tuple
+        - One of:
+
+            - local_rf_stride: a 2 tuple or None
+                if specified, pull out patches on a regular grid
+            - local_rf_max_shape: a 2 tuple or None
+                if specified, pull out patches of random shape and
+                location
+            - local_rf_draw_patches : WRITEME
+                if true, local receptive fields are patches from
+                local_rf_src. otherwise, they're random patches.
+                will initialize the weights to have only local
+                receptive fields. (won't make a sparse matrix or
+                anything like that)
+
+        incompatible with random_patches_src for now
+    init_unit_W : bool
+        if True, initializes weights with unit norm
+    """
 
     def __init__(self, nvis, nhid, irange, init_bias_hid,
                        init_B, min_B, max_B,
                        init_alpha, min_alpha, max_alpha, init_mu,
                        m_step,
-                        min_bias_hid = -1e30,
-                        max_bias_hid = 1e30,
-                        min_mu = -1e30,
-                        max_mu = 1e30,
-                       e_step = None,
-                        tied_B = False,
-                       monitor_stats = None,
-                       monitor_params = None,
-                       monitor_functional = False,
-                       recycle_q = 0,
-                       seed = None,
-                       disable_W_update = False,
-                       constrain_W_norm = False,
-                       monitor_norms = False,
-                       random_patches_src = None,
-                       local_rf_src = None,
-                       local_rf_shape = None,
-                       local_rf_max_shape = None,
-                       local_rf_stride = None,
-                       local_rf_draw_patches = False,
-                       init_unit_W = None,
-                       debug_m_step = False,
-                       print_interval = 10000,
-                       stop_after_hack = None,
-                       set_B_to_marginal_precision = False,
-                       init_momentum = None,
-                       final_momentum = None,
-                       momentum_saturation_example = None):
-        """
-        .. todo::
-
-            WRITEME properly
-
-        nvis: # of visible units
-        nhid: # of hidden units
-        irange: (scalar) weights are initinialized ~U( [-irange,irange] )
-        init_bias_hid: initial value of hidden biases (scalar or vector)
-        init_B: initial value of B (scalar or vector)
-        min_B, max_B: (scalar) learning updates to B are clipped to [min_B, max_B]
-        init_alpha: initial value of alpha (scalar or vector)
-        min_alpha, max_alpha: (scalar) learning updates to alpha are clipped to [min_alpha, max_alpha]
-        init_mu: initial value of mu (scalar or vector)
-        min_mu/max_mu: clip mu updates to this range.
-        e_step:      An E_Step object that determines what kind of E-step to do
-                        if None, assumes that the S3C model is being driven by
-                        a larger model, and does not generate theano functions
-                        necessary for autonomous operation
-        m_step:      An M_Step object that determines what kind of M-step to do
-        tied_B:         if True, use a scalar times identity for the precision on visible units.
-                        otherwise use a diagonal matrix for the precision on visible units
-        constrain_W_norm: if true, norm of each column of W must be 1 at all times
-        init_unit_W:      if true, each column of W is initialized to have unit norm
-        monitor_stats:  a list of sufficient statistics to monitor on the monitoring dataset
-        monitor_params: a list of parameters to monitor TODO: push this into Model base class
-        monitor_functional: if true, monitors the EM functional on the monitoring dataset
-        monitor_norms: if true, monitors the norm of W at the end of each solve step, but before
-                        blending with old W by new_coeff
-                        This lets us see how much distortion is introduced by norm clipping
-                        Note that unless new_coeff = 1, the post-solve norm monitored by this
-                        flag will not be equal to the norm of the final parameter value, even
-                        if no norm clipping is activated.
-        recycle_q: if nonzero, initializes the e-step with the output of the previous iteration's
-                    e-step. obviously this should only be used if you are using the same data
-                    in each batch. when recycle_q is nonzero, it should be set to the batch size.
-        disable_W_update: if true, doesn't update W (useful for experiments where you only learn the prior)
-        random_patches_src: if not None, should be a dataset
-                            will set W to a batch
-        local_rf_src: if not None, should be a dataset
-                requires the following other params:
-                    local_rf_shape: a 2 tuple
-                    one of:
-                        local_rf_stride: a 2 tuple or None
-                            if specified, pull out patches on a regular grid
-                        local_rf_max_shape: a 2 tuple or None
-                            if specified, pull out patches of random shape and
-                                location
-                    local_rf_draw_patches: if true, local receptive fields are patches from local_rf_src
-                                            otherwise, they're random patches
-                 will initialize the weights to have only local receptive fields. (won't make a sparse
-                    matrix or anything like that)
-                 incompatible with random_patches_src for now
-        init_unit_W:   if True, initializes weights with unit norm
-        """
-
+                       min_bias_hid=-1e30,
+                       max_bias_hid=1e30,
+                       min_mu=-1e30,
+                       max_mu=1e30,
+                       e_step=None,
+                       tied_B=False,
+                       monitor_stats=None,
+                       monitor_params=None,
+                       monitor_functional=False,
+                       recycle_q=0,
+                       seed=None,
+                       disable_W_update=False,
+                       constrain_W_norm=False,
+                       monitor_norms=False,
+                       random_patches_src=None,
+                       local_rf_src=None,
+                       local_rf_shape=None,
+                       local_rf_max_shape=None,
+                       local_rf_stride=None,
+                       local_rf_draw_patches=False,
+                       init_unit_W=None,
+                       debug_m_step=False,
+                       print_interval=10000,
+                       stop_after_hack=None,
+                       set_B_to_marginal_precision=False,
+                       init_momentum=None,
+                       final_momentum=None,
+                       momentum_saturation_example=None):
         Model.__init__(self)
         Block.__init__(self)
 
@@ -458,10 +507,8 @@ class S3C(Model, Block):
 
             WRITEME
         """
-        if self.seed is None:
-            self.rng = np.random.RandomState([1.,2.,3.])
-        else:
-            self.rng = np.random.RandomState(self.seed)
+
+        self.rng = make_np_rng(self.seed, [1,2,3], which_method="uniform")
 
     def redo_everything(self):
         """
@@ -480,6 +527,7 @@ class S3C(Model, Block):
             W /= norms
 
         self.W = sharedX(W, name = 'W')
+
         self.bias_hid = sharedX(np.zeros(self.nhid)+self.init_bias_hid, name='bias_hid')
         self.alpha = sharedX(np.zeros(self.nhid)+self.init_alpha, name = 'alpha')
         self.mu = sharedX(np.zeros(self.nhid)+self.init_mu, name='mu')
@@ -676,9 +724,7 @@ class S3C(Model, Block):
         This implementation returns specification corresponding to unlabeled
         inputs.
 
-        Returns
-        -------
-        WRITEME
+        WRITEME: Returns section
         """
         return (self.get_input_space(), self.get_input_source())
 
@@ -870,9 +916,9 @@ class S3C(Model, Block):
 
 
         for t12, t3, t4 in get_debug_values(term1_plus_term2, term3, term4):
-            debug_assert(not np.any(np.isnan(t12)))
-            debug_assert(not np.any(np.isnan(t3)))
-            debug_assert(not np.any(np.isnan(t4)))
+            debug_assert(not contains_nan(t12))
+            debug_assert(not contains_nan(t3))
+            debug_assert(not contains_nan(t4))
 
         rval = term1_plus_term2 + term3 + term4
 
@@ -897,9 +943,7 @@ class S3C(Model, Block):
         V : tensor_like
             A symbolic design matrix
 
-        Returns
-        -------
-        WRITEME
+        WRITEME: Returns section
         """
 
         #E step
@@ -917,7 +961,7 @@ class S3C(Model, Block):
             learning_updates[self.prev_H] = H_hat
             learning_updates[self.prev_S] = S_hat
 
-        self.censor_updates(learning_updates)
+        self.modify_updates(learning_updates)
 
         if self.debug_m_step:
             energy_functional_before = self.energy_functional(H = hidden_obs['H'],
@@ -958,16 +1002,17 @@ class S3C(Model, Block):
 
 
 
-        print "compiling s3c learning function..."
+        logger.info("compiling s3c learning function...")
         t1 = time.time()
         rval = function([V], updates = learning_updates)
         t2 = time.time()
-        print "... compilation took "+str(t2-t1)+" seconds"
-        print "graph size: ",len(rval.maker.fgraph.toposort())
+        logger.debug("... compilation took {0} seconds".format(t2-t1))
+        logger.debug("graph size: "
+                    "{0}".format(len(rval.maker.fgraph.toposort())))
 
         return rval
 
-    def censor_updates(self, updates):
+    def _modify_updates(self, updates):
         """
         .. todo::
 
@@ -1012,11 +1057,13 @@ class S3C(Model, Block):
 
             WRITEME
 
-        H_sample: a matrix of values of H
-                  if none is provided, samples one from the prior
-                  (H_sample is used if you want to see what samples due
-                    to specific hidden units look like, or when sampling
-                    from a larger model that s3c is part of)
+        Parameters
+        ----------
+        H_sample: a matrix of values of H, optional
+            if none is provided, samples one from the prior
+            (H_sample is used if you want to see what samples due
+            to specific hidden units look like, or when sampling
+            from a larger model that s3c is part of)
         """
 
         if theano_rng is None:
@@ -1442,7 +1489,7 @@ class S3C(Model, Block):
 
         if self.stop_after_hack is not None:
             if self.monitor.examples_seen > self.stop_after_hack:
-                print 'stopping due to too many examples seen'
+                logger.error('stopping due to too many examples seen')
                 quit(-1)
 
         self.learn_mini_batch(dataset.get_batch_design(batch_size))
@@ -1454,26 +1501,28 @@ class S3C(Model, Block):
 
             WRITEME
         """
-        print ""
         b = self.bias_hid.get_value(borrow=True)
-        assert not np.any(np.isnan(b))
+        assert not contains_nan(b)
         p = 1./(1.+np.exp(-b))
-        print 'p: ',(p.min(),p.mean(),p.max())
+        logger.info('p: ({0}, {1}, {2})'.format(p.min(), p.mean(), p.max()))
         B = self.B_driver.get_value(borrow=True)
-        assert not np.any(np.isnan(B))
-        print 'B: ',(B.min(),B.mean(),B.max())
+        assert not contains_nan(B)
+        logger.info('B: ({0}, {1}, {2})'.format(B.min(), B.mean(), B.max()))
         mu = self.mu.get_value(borrow=True)
-        assert not np.any(np.isnan(mu))
-        print 'mu: ',(mu.min(),mu.mean(),mu.max())
+        assert not contains_nan(mu)
+        logger.info('mu: ({0}, {1}, {2})'.format(mu.min(), mu.mean(),
+                                                 mu.max()))
         alpha = self.alpha.get_value(borrow=True)
-        assert not np.any(np.isnan(alpha))
-        print 'alpha: ',(alpha.min(),alpha.mean(),alpha.max())
+        assert not contains_nan(alpha)
+        logger.info('alpha: ({0}, {1}, {2})'.format(alpha.min(), alpha.mean(),
+                                                    alpha.max()))
         W = self.W.get_value(borrow=True)
-        assert not np.any(np.isnan(W))
-        assert not np.any(np.isinf(W))
-        print 'W: ',(W.min(),W.mean(),W.max())
+        assert isfinite(W)
+        logger.info('W: ({0}, {1}, {2})'.format(W.min(), W.mean(), W.max()))
         norms = numpy_norms(W)
-        print 'W norms:',(norms.min(),norms.mean(),norms.max())
+        logger.info('W norms: '
+                    '({0}, {1}, {2})'.format(norms.min(), norms.mean(),
+                                             norms.max()))
 
     def learn_mini_batch(self, X):
         """
@@ -1586,7 +1635,7 @@ class E_Step(object):
 
     The structured variational approximation is:
 
-        P(v,h,s) = \Pi_i Q_i (h_i, s_i)
+    P(v,h,s) = \Pi_i Q_i (h_i, s_i)
 
     We alternate between updating the Q parameters over s in parallel and
     updating the q parameters over h in parallel.
@@ -1594,11 +1643,11 @@ class E_Step(object):
     The h parameters are updated with a damping coefficient that is the same
     for all units but changes each time step, specified by the yaml file. The
     slab variables are updated with:
-        optionally: a unit-specific damping designed to ensure stability
-                    by preventing reflections from going too far away
-                    from the origin.
-        optionally: additional damping that is the same for all units but
-                    changes each time step, specified by the yaml file
+
+    - optionally: a unit-specific damping designed to ensure stability
+        by preventing reflections from going too far away from the origin.
+    - optionally: additional damping that is the same for all units but
+        changes each time step, specified by the yaml file
 
     The update equations were derived based on updating h_i independently,
     then updating s_i independently, even though it is possible to solve for
@@ -1607,6 +1656,32 @@ class E_Step(object):
     This is because the damping is necessary for parallel updates to be
     reasonable, but damping the solution to s_i from the joint update makes the
     solution to h_i from the joint update no longer optimal.
+
+    Parameters
+    ----------
+    h_new_coeff_schedule : list
+        List of coefficients to put on the new value of h on each damped
+        fixed point step (coefficients on s are driven by a special
+        formula). Length of this list determines the number of fixed point
+        steps. If None, assumes that the model is not meant to run on its
+        own (ie a larger model will specify how to do inference in this
+        layer)
+    s_new_coeff_schedule : list
+        List of coefficients to put on the new value of s on each damped
+        fixed point step. These are applied AFTER the reflection
+        clipping, which can be seen as a form of per-unit damping.
+        s_new_coeff_schedule must have same length as
+        h_new_coeff_schedule. If s_new_coeff_schedule is not provided, it
+        will be filled in with all ones, i.e. it will default to no
+        damping beyond the reflection clipping
+    clip_reflections, rho : bool, float
+        If clip_reflections is True, the update to S_hat[i,j] is bounded
+        on one side by - rho * S_hat[i,j] and unbounded on the other side
+    monitor_ranges : bool
+        If True, adds the channels h_range_<min,mean,max> and
+        hs_range_<min,mean_max>  showing the amounts that different h_hat
+        and s_hat variational parameters change across the monitoring
+        dataset
     """
 
     def get_monitoring_channels(self, V):
@@ -1683,34 +1758,6 @@ class E_Step(object):
                        monitor_s_mag = False,
                        rho = 0.5,
                        monitor_ranges = False):
-        """
-        Parameters
-        ----------
-        h_new_coeff_schedule : list
-            List of coefficients to put on the new value of h on each damped \
-            fixed point step (coefficients on s are driven by a special \
-            formula). Length of this list determines the number of fixed point
-            steps. If None, assumes that the model is not meant to run on its \
-            own (ie a larger model will specify how to do inference in this \
-            layer)
-        s_new_coeff_schedule : list
-            List of coefficients to put on the new value of s on each damped \
-            fixed point step. These are applied AFTER the reflection \
-            clipping, which can be seen as a form of per-unit damping. \
-            s_new_coeff_schedule must have same length as \
-            h_new_coeff_schedule. If s_new_coeff_schedule is not provided, it \
-            will be filled in with all ones, i.e. it will default to no \
-            damping beyond the reflection clipping
-        clip_reflections, rho : bool, float
-            If clip_reflections is True, the update to S_hat[i,j] is bounded \
-            on one side by - rho * S_hat[i,j] and unbounded on the other side
-        monitor_ranges : bool
-            If True, adds the channels h_range_<min,mean,max> and \
-            hs_range_<min,mean_max>  showing the amounts that different h_hat \
-            and s_hat variational parameters change across the monitoring \
-            dataset
-        """
-
         self.autonomous = True
 
         if h_new_coeff_schedule is None:
@@ -1824,8 +1871,8 @@ class E_Step(object):
 
 
         for entropy, energy in get_debug_values(entropy_term, energy_term):
-            debug_assert(not np.any(np.isnan(entropy)))
-            debug_assert(not np.any(np.isnan(energy)))
+            debug_assert(not contains_nan(entropy))
+            debug_assert(not contains_nan(energy))
 
         KL = entropy_term + energy_term
 
@@ -1904,7 +1951,8 @@ class E_Step(object):
         mean_term.name = 'infer_S_hat:mean_term'
 
         assert V.dtype == config.floatX
-        assert BW.dtype == config.floatX
+        assert BW.dtype == config.floatX, \
+            "Expected %s, got %s" % (config.floatX, BW.dtype)
         data_term = T.dot(V, BW)
         data_term.name = 'infer_S_hat:data_term'
 
@@ -2049,6 +2097,10 @@ class E_Step(object):
 
     def variational_inference(self, V, return_history = False):
         """
+        .. todo::
+
+            WRITEME
+
         TODO: rename to infer (for now, infer exists as a synonym)
         """
 
@@ -2058,15 +2110,17 @@ class E_Step(object):
 
     def infer(self, V, return_history = False):
         """
-        WRITEME
+        ... todo::
+
+            WRITEME
 
         Parameters
         ----------
         V : WRITEME
         return_history : bool
-            If True, returns a list of dictionaries with showing the history \
-            of the variational parameters throughout fixed point updates \
-            If False, returns a dictionary containing the final variational \
+            If True, returns a list of dictionaries with showing the history
+            of the variational parameters throughout fixed point updates
+            If False, returns a dictionary containing the final variational
             parameters
 
         Returns
@@ -2180,17 +2234,15 @@ class Grad_M_Step:
     """
     A partial M-step based on gradient ascent. More aggressive M-steps are
     possible but didn't work particularly well in practice on STL-10/CIFAR-10
+
+    .. todo::
+
+        WRITEME : parameter list
     """
 
     def __init__(self, learning_rate = None, B_learning_rate_scale  = 1,
             alpha_learning_rate_scale = 1.,
             W_learning_rate_scale = 1, p_penalty = 0.0, B_penalty = 0.0, alpha_penalty = 0.0):
-        """
-        .. todo::
-
-            WRITEME
-        """
-
         self.autonomous = True
 
         if learning_rate is None:
@@ -2304,12 +2356,8 @@ class E_Step_Scan(E_Step):
     """
     The heuristic E step implemented using scan rather than unrolled loops
     """
-    def __init__(self, ** kwargs):
-        """
-        .. todo::
 
-            WRITEME
-        """
+    def __init__(self, ** kwargs):
         super(E_Step_Scan, self).__init__( ** kwargs )
 
         self.h_new_coeff_schedule = sharedX( self.h_new_coeff_schedule)
@@ -2323,9 +2371,9 @@ class E_Step_Scan(E_Step):
         ----------
         V : WRITEME
         return_history : bool
-            If True, returns a list of dictionaries with showing the history \
-            of the variational parameters throughout fixed point updates \
-            If False, returns a dictionary containing the final variational \
+            If True, returns a list of dictionaries with showing the history
+            of the variational parameters throughout fixed point updates
+            If False, returns a dictionary containing the final variational
             parameters
 
         Returns

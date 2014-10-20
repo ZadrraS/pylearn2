@@ -2,13 +2,26 @@
 Routines for extracting (reflected) windows of image stacks in
 (channels, rows, cols, batch_size) format.
 """
+import logging
 import numpy as np
 cimport numpy as np
 cimport cython
 
+from pylearn2.utils.rng import make_np_rng
 
-cdef extern from "stdlib.h":
-    int rand_r(unsigned int *seedp) nogil
+
+IF UNAME_SYSNAME == "Windows":
+    cdef extern from "stdlib.h":
+        int rand() nogil
+    cdef int rand_r(unsigned int *seedp) nogil:
+        return rand()
+    log = logging.getLogger(__name__)
+    log.warning("Microsoft Windows detected; experiments with WindowAndFlip "
+                "will not be deterministic/repeatable even with same seed "
+                "because MSVCRT does not implement rand_r.")
+ELSE:
+    cdef extern from "stdlib.h":
+        int rand_r(unsigned int *seedp) nogil
 
 
 def _check_args(np.ndarray[np.float32_t, ndim=4] images,
@@ -81,8 +94,7 @@ def random_window_and_flip_c01b(np.ndarray[np.float32_t, ndim=4] images,
     cdef np.npy_intp row_offset_max = rows - window_r
     cdef np.npy_intp col_offset_max = cols - window_c
     _check_args(images, window_shape, out)
-    if not hasattr(rng, 'random_integers'):
-        rng = np.random.RandomState(rng)
+    rng = make_np_rng(rng, which_method="random_integers")
     if out is None:
         out = np.empty((channels, window_r, window_c, batch),
                        dtype='float32')
@@ -152,8 +164,7 @@ def random_window_and_flip_b01c(np.ndarray[np.float32_t, ndim=4] images,
     cdef np.npy_intp row_offset_max = rows - window_r
     cdef np.npy_intp col_offset_max = cols - window_c
     _check_args(images, window_shape, out)
-    if not hasattr(rng, 'random_integers'):
-        rng = np.random.RandomState(rng)
+    rng = make_np_rng(rng, which_method="random_integers")
     if out is None:
         out = np.empty((batch, window_r, window_c, channels),
                        dtype='float32')

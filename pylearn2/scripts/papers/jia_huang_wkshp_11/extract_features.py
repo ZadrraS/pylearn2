@@ -22,6 +22,8 @@ from theano import tensor as T
 from theano import function
 from pylearn2.datasets.preprocessing import ExtractPatches, ExtractGridPatches, ReassembleGridPatches
 from pylearn2.utils import serial
+from pylearn2.utils.rng import make_np_rng
+from pylearn2.utils import contains_nan
 from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix, DefaultViewConverter
 from pylearn2.datasets.cifar10 import CIFAR10
 from pylearn2.datasets.cifar100 import CIFAR100
@@ -208,7 +210,7 @@ class FeatureExtractor:
         nvis = input_space.dim
         self.size = int(np.sqrt(nvis/3))
 
-        rng = np.random.RandomState([1,2,3])
+        rng = make_np_rng(None, [1,2,3], which_method="randint")
 
         #Generate the random pooling structure
         num_filters = self.model.mu.get_value().shape[0]
@@ -383,7 +385,7 @@ class FeatureExtractor:
 
             feat_dataset = copy.copy(fd)
 
-            if np.any(np.isnan(feat)):
+            if contains_nan(feat):
                 nan += np.isnan(feat).sum()
                 feat[np.isnan(feat)] = 0
 

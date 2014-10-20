@@ -5,13 +5,13 @@ __authors__ = "Ian Goodfellow and Razvan Pascanu"
 __copyright__ = "Copyright 2013, Universite de Montreal"
 __credits__ = ["Ian Goodfellow and Razvan Pascanu"]
 __license__ = "3-clause BSD"
-__maintainer__ = "Ian Goodfellow"
-__email__ = "goodfeli@iro"
+__maintainer__ = "LISA Lab"
+__email__ = "pylearn-dev@googlegroups"
 
 import numpy as np
 import theano.tensor as T
 
-from pylearn2.base import Block
+from pylearn2.blocks import Block
 from pylearn2.utils import as_floatX, constantX
 
 
@@ -75,6 +75,9 @@ def multiple_switch(*args):
 
     Applies a cascade of ifelse. The output will be a Theano expression
     which evaluates:
+
+    .. code-block:: none
+
         if args0:
             then arg1
         elif arg2:
@@ -93,42 +96,54 @@ def multiple_switch(*args):
 
 def symGivens2(a, b):
     """
-    .. todo::
-
-        WRITEME properly
-    
     Stable Symmetric Givens rotation plus reflection
 
     Parameters
+    ----------
+    a : theano scalar
+        first element of a two-vector  [a; b]
+    b : theano scalar
+        second element of a two-vector [a; b]
 
-        a: (theano scalar) first element of a two-vector  [a; b]
-        b: (theano scalar) second element of a two-vector [a; b]
     Returns
+    -------
+    c : WRITEME
+        cosine(theta), where theta is the implicit angle of
+        rotation (counter-clockwise) in a plane-rotation
+    s : WRITEME
+        sine(theta)
+    d : WRITEME
+        two-norm of [a; b]
 
-        c  cosine(theta), where theta is the implicit angle of
-           rotation (counter-clockwise) in a plane-rotation
-        s  sine(theta)
-        d  two-norm of [a; b]
+    Notes
+    -----
+    * See also:
 
-    Description:
-        This method gives c and s such that
-            [ c  s ][a] = [d],
-            [ s -c ][b]   [0]
-      where d = two norm of vector [a, b],
-            c = a / sqrt(a^2 + b^2) = a / d,
-            s = b / sqrt(a^2 + b^2) = b / d.
+      - Algorithm 4.9, stable *unsymmetric* Givens rotations in Golub
+        and van Loan's book Matrix Computations, 3rd edition.
+
+      - MATLAB's function PLANEROT.
+
+    * This method gives c and s such that
+
+      .. math::
+
+          \\begin{pmatrix} c & s \\\ s & -c \\end{pmatrix}
+          \\begin{pmatrix} a \\\ b \\end{pmatrix} =
+          \\begin{pmatrix} d \\\ 0 \\end{pmatrix}
+
+      where
+
+      :math:`d = \\left\Vert \\begin{pmatrix} a \\\ b \\end{pmatrix}
+      \\right\Vert _{2}`,
+      :math:`c = a / \sqrt{a^2 + b^2} = a / d`,
+      :math:`s = b / \sqrt{a^2 + b^2} = b / d`.
+
       The implementation guards against overflow in computing
-         sqrt(a^2 + b^2).
+      :math:`\sqrt{a^2 + b^2}`.
 
-      SEE ALSO:
-         (1) Algorithm 4.9, stable *unsymmetric* Givens
-         rotations in Golub and van Loan's book Matrix
-         Computations, 3rd edition.
-         (2) MATLAB's function PLANEROT.
-
-      Observations:
-          Implementing this function as a single op in C might improve speed
-          considerably ..
+    * Observation: Implementing this function as a single op in C might
+      improve speed considerably .
     """
     c_branch1 = T.switch(T.eq(a, constantX(0)),
                           constantX(1),
@@ -173,7 +188,7 @@ def sqrt_inner_product(xs, ys=None):
     .. todo::
 
         WRITEME properly
-    
+
     Compute the square root of the inner product between `xs` and `ys`.
     If `ys` is not provided, computes the norm between `xs` and `xs`.
     Since `xs` and `ys` are list of tensor, think of it as the norm
@@ -181,10 +196,12 @@ def sqrt_inner_product(xs, ys=None):
     tenors in `xs` and the similar vector obtain from `ys`. Note that
     `ys` should match `xs`.
 
-    Parameters:
-
-        xs : list of theano expressions
-        ys : None or list of theano expressions
+    Parameters
+    ----------
+    xs : list of theano expressions
+        WRITEME
+    ys : None or list of theano expressions, optional
+        WRITEME
     """
     if ys is None:
         ys = [x for x in xs]
@@ -196,7 +213,7 @@ def inner_product(xs, ys=None):
     .. todo::
 
         WRITEME properly
-    
+
     Compute the inner product between `xs` and `ys`. If ys is not provided,
     computes the square norm between `xs` and `xs`.
     Since `xs` and `ys` are list of tensor, think of it as the inner
@@ -204,10 +221,12 @@ def inner_product(xs, ys=None):
     tenors in `xs` and the similar vector obtain from `ys`. Note that
     `ys` should match `xs`.
 
-    Parameters:
-
-        xs : list of theano expressions
-        ys : None or list of theano expressions
+    Parameters
+    ----------
+    xs : list of theano expressions
+        WRITEME
+    ys : None or list of theano expressions, optional
+        WRITEME
     """
     if ys is None:
         ys = [x for x in xs]
@@ -222,17 +241,44 @@ def is_binary(x):
     """
     return np.all( (x == 0) + (x == 1))
 
+
+def log_sum_exp(log_A, axis=None):
+    """
+    A numerically stable expression for
+    `T.log(T.exp(log_A).sum(axis=axis))`
+
+    Parameters
+    ----------
+    log_A : tensor_like
+        Log of tensor A
+    axis : int, optional
+        Axis along which to sum
+    """
+    log_A_max = T.max(log_A, axis=axis, keepdims=True)
+    B = (
+        T.log(T.sum(T.exp(log_A - log_A_max), axis=axis, keepdims=True)) +
+        log_A_max
+    )
+    if axis is None:
+        return B.dimshuffle(())
+    else:
+        if type(axis) is int:
+            axis = [axis]
+        return B.dimshuffle([i for i in range(B.ndim) if
+                             i % B.ndim not in axis])
+
+
 class Identity(Block):
     """
-    A Block that computes the identity transformation. Mostly useful as a
-    placeholder.
-    """
-    def __init__(self, input_space=None):
-        """
-        .. todo::
+    A Block that computes the identity transformation. Mostly useful as
+    a placeholder.
 
-            WRITEME
-        """
+    Parameters
+    ----------
+    input_space : WRITEME
+    """
+
+    def __init__(self, input_space=None):
         super(Identity, self).__init__()
         self.input_space = input_space
 

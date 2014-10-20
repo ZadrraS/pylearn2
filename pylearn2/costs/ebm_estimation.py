@@ -1,17 +1,25 @@
-""" Training costs for unsupervised learning of energy-based models """
-import warnings
-import sys
-import theano.tensor as T
-from theano import scan
-from pylearn2.costs.cost import Cost, DefaultDataSpecsMixin
-from pylearn2.space import CompositeSpace
-from pylearn2.utils import py_integer_types
-from theano.compat.python2x import OrderedDict
-from itertools import izip
-from pylearn2.models.rbm import BlockGibbsSampler
+"""
+Training costs for unsupervised learning of energy-based models
+"""
+import functools
+import logging
 import numpy as np
+import sys
 
-warnings.warn("Cost changing the recursion limit.")
+from theano.compat.python2x import OrderedDict
+from theano import scan
+import theano.tensor as T
+from theano.compat.six.moves import zip as izip
+
+from pylearn2.costs.cost import Cost, DefaultDataSpecsMixin
+from pylearn2.utils import py_integer_types
+from pylearn2.utils.rng import make_theano_rng
+from pylearn2.models.rbm import BlockGibbsSampler
+
+
+logger = logging.getLogger(__name__)
+
+logger.debug("Cost changing the recursion limit.")
 # We need this to be high enough that the big theano graphs we make
 # when unrolling inference don't cause python to complain.
 # python intentionally declares stack overflow well before the stack
@@ -27,19 +35,19 @@ warnings.warn("Cost changing the recursion limit.")
 # precisely when you're going to exceed the stack segment.
 sys.setrecursionlimit(40000)
 
-use_sandbox = True
-if use_sandbox:
-    from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
-else:
-    warnings.warn('using SLOW rng')
-    RandomStreams = T.shared_randomstreams.RandomStreams
-
 class NCE(DefaultDataSpecsMixin, Cost):
     """
     Noise-Contrastive Estimation
 
     See "Noise-Contrastive Estimation: A new estimation principle for unnormalized models "
     by Gutmann and Hyvarinen
+
+    Parameters
+    ----------
+    noise : WRITEME
+        A Distribution from which noisy examples are generated
+    noise_per_clean : WRITEME
+        Number of noisy examples to generate for each clean example given
     """
     def h(self, X, model):
         """
@@ -103,17 +111,6 @@ class NCE(DefaultDataSpecsMixin, Cost):
         return rval
 
     def __init__(self, noise, noise_per_clean):
-        """
-        .. todo::
-
-            WRITEME properly
-        
-        params
-        -------
-            noise: a Distribution from which noisy examples are generated
-            noise_per_clean: # of noisy examples to generate for each clean example given
-        """
-
         self.noise = noise
 
         assert isinstance(noise_per_clean, py_integer_types)
@@ -125,6 +122,7 @@ class SM(DefaultDataSpecsMixin, Cost):
     (Regularized) Score Matching
 
     See:
+
     - "Regularized estimation of image statistics by Score Matching",
       D. Kingma, Y. LeCun, NIPS 2010
     - eqn. 4 of "On Autoencoders and Score Matching for Energy Based Models"
@@ -132,14 +130,12 @@ class SM(DefaultDataSpecsMixin, Cost):
 
     Uses the mean over visible units rather than sum over visible units
     so that hyperparameters won't depend as much on the # of visible units
+
+    Parameters
+    ----------
+    lambd : WRITEME
     """
-
     def __init__(self, lambd = 0):
-        """
-        .. todo::
-
-            WRITEME
-        """
         assert lambd >= 0
         self.lambd = lambd
 
@@ -176,23 +172,19 @@ class SMD(DefaultDataSpecsMixin, Cost):
 
     Note that instead of using half the squared norm we use the mean squared error,
     so that hyperparameters don't depend as much on the # of visible units
+
+    Parameters
+    ----------
+    corruptor : WRITEME
+        WRITEME
     """
 
     def __init__(self, corruptor):
-        """
-        .. todo::
-
-            WRITEME
-        """
         super(SMD, self).__init__()
         self.corruptor = corruptor
 
+    @functools.wraps(Cost.expr)
     def expr(self, model, data):
-        """
-        .. todo::
-
-            WRITEME
-        """
         self.get_data_specs(model)[0].validate(data)
         X = data
         X_name = 'X' if X.name is None else X.name
@@ -201,7 +193,6 @@ class SMD(DefaultDataSpecsMixin, Cost):
 
         if corrupted_X.name is None:
             corrupted_X.name = 'corrupt('+X_name+')'
-        #
 
         model_score = model.score(corrupted_X)
         assert len(model_score.type.broadcastable) == len(X.type.broadcastable)
@@ -229,30 +220,26 @@ class SMD(DefaultDataSpecsMixin, Cost):
         return (model.get_input_space(), model.get_input_source())
 
 class SML(Cost):
-    """ Stochastic Maximum Likelihood
-
-        See "On the convergence of Markovian stochastic algorithms with rapidly 
-             decreasing ergodicity rates"
-        by Laurent Younes (1998)
-        
-        Also known as Persistent Constrastive Divergence (PCD)
-        See "Training restricted boltzmann machines using approximations to
-             the likelihood gradient" 
-        by Tijmen Tieleman  (2008)
     """
+    Stochastic Maximum Likelihood
 
+    See "On the convergence of Markovian stochastic algorithms with rapidly
+    decreasing ergodicity rates" by Laurent Younes (1998)
+
+    Also known as Persistent Constrastive Divergence (PCD)
+    See "Training restricted boltzmann machines using approximations to
+    the likelihood gradient" by Tijmen Tieleman  (2008)
+
+    The number of particles fits the batch size.
+
+    Parameters
+    ----------
+    batch_size: int
+        Batch size of the training algorithm
+    nsteps: int
+        Number of steps made by the block Gibbs sampler between each epoch
+    """
     def __init__(self, batch_size, nsteps ):
-        """
-            The number of particles fits the batch size.
-
-            Parameters
-            ---------
-            batch_size: int
-                batch size of the training algorithm
-            nsteps: int
-                number of steps made by the block Gibbs sampler
-                between each epoch
-        """
         super(SML, self).__init__()
         self.nchains = batch_size
         self.nsteps  = nsteps
@@ -262,7 +249,7 @@ class SML(Cost):
 
         params = list(model.get_params())
 
-        grads = T.grad(cost, params, disconnected_inputs = 'ignore', 
+        grads = T.grad(cost, params, disconnected_inputs = 'ignore',
                        consider_constant = [self.sampler.particles])
 
         gradients = OrderedDict(izip(params, grads))
@@ -277,9 +264,9 @@ class SML(Cost):
 
         if not hasattr(self,'sampler'):
             self.sampler = BlockGibbsSampler(
-                rbm=model, 
-                particles=0.5+np.zeros((self.nchains,model.get_input_dim())), 
-                rng=model.rng, 
+                rbm=model,
+                particles=0.5+np.zeros((self.nchains,model.get_input_dim())),
+                rng=model.rng,
                 steps=self.nsteps)
 
         # compute negative phase updates
@@ -301,30 +288,28 @@ class SML(Cost):
         return (model.get_input_space(), model.get_input_source())
 
 class CDk(Cost):
-    """ Contrastive Divergence
-
-        See "Training products of experts by minimizing contrastive divergence" 
-        by Geoffrey E. Hinton (2002)
     """
+    Contrastive Divergence
 
+    See "Training products of experts by minimizing contrastive divergence"
+    by Geoffrey E. Hinton (2002)
+
+    Parameters
+    ----------
+    nsteps : int
+        Number of Markov chain steps for the negative sample
+    seed : int
+        Seed for the random number generator
+    """
     def __init__(self, nsteps, seed=42):
-        """
-            Parametes
-            ---------
-            nsteps: int
-                number of Markov chain steps for the negative sample
-            seed: int
-                seed for the random number generator
-        """
- 
         super(CDk, self).__init__()
         self.nsteps  = nsteps
-        self.rng = RandomStreams(seed)
+        self.rng = make_theano_rng(seed, which_method='binomial')
 
     def _cost(self, model, data):
         pos_v = data
         neg_v = data
-        
+
         for k in range(self.nsteps):
             [neg_v, _locals] = model.gibbs_step_for_v(neg_v,self.rng)
 

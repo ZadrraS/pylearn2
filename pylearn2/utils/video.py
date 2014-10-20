@@ -2,13 +2,10 @@
 Utilities for working with videos, pulling out patches, etc.
 """
 import numpy
-import warnings
 
-try:
-    from pylearn2.utils._video import rgb_to_gray
-except ImportError:
-    warnings.warn("Import of Cython module failed, some functions unavailable")
+from theano.compat.python2x import OrderedDict
 
+from pylearn2.utils.rng import make_np_rng
 
 __author__ = "David Warde-Farley"
 __copyright__ = "Copyright 2011, David Warde-Farley / Universite de Montreal"
@@ -31,7 +28,8 @@ def get_video_dims(fname):
     Returns
     -------
     shape : tuple
-        The spatiotemporal dimensions of the video, (length, height, width).
+        The spatiotemporal dimensions of the video
+        (length, height, width).
     """
     try:
         import pyffmpeg
@@ -58,9 +56,13 @@ class FrameLookup(object):
     collection of files into the frame index of a specific video file.
 
     Item-indexing on this object will yield a (filename, nframes, frame_no)
-    tuple, where nframes is the number of frames in the given file (mainly
-    for checking that we're far enough from the end so that we can
-    sample a big enough chunk).
+    tuple, where nframes is the number of frames in the given file
+    (mainly for checking that we're far enough from the end so that we
+    can sample a big enough chunk).
+
+    Parameters
+    ----------
+    names_ang_lengths : WRITEME
     """
     def __init__(self, names_and_lengths):
         self.files, self.lengths = zip(*names_and_lengths)
@@ -88,37 +90,36 @@ def spatiotemporal_cubes(file_tuples, shape, n_patches=numpy.inf, rng=None):
     Parameters
     ----------
     file_tuples : list of tuples
-        Each element should be a 2-tuple consisting of a filename \
-        (or arbitrary identifier) and a (length, height, width) \
-        shape tuple of the dimensions (number of frames in the video, \
+        Each element should be a 2-tuple consisting of a filename
+        (or arbitrary identifier) and a (length, height, width)
+        shape tuple of the dimensions (number of frames in the video,
         height and width of each frame).
 
     shape : tuple
-        A shape tuple consisting of the desired (length, height, width) \
+        A shape tuple consisting of the desired (length, height, width)
         of each spatiotemporal patch.
 
     n_patches : int, optional
-        The number of patches to generate. By default, generates patches \
+        The number of patches to generate. By default, generates patches
         infinitely.
 
     rng : RandomState object or seed, optional
-        The random number generator (or seed) to use. Defaults to None, \
+        The random number generator (or seed) to use. Defaults to None,
         meaning it will be seeded from /dev/urandom or the clock.
 
     Returns
     -------
     generator : generator object
-        A generator that yields a stream of (filename, slicetuple) tuples. \
-        The slice tuple is such that it indexes into a 3D array containing \
-        the entire clip with frames indexed along the first axis, rows \
+        A generator that yields a stream of (filename, slicetuple) tuples.
+        The slice tuple is such that it indexes into a 3D array containing
+        the entire clip with frames indexed along the first axis, rows
         along the second and columns along the third.
     """
     frame_lookup = FrameLookup([(a, b[0]) for a, b in file_tuples])
-    file_lookup = dict(file_tuples)
+    file_lookup = OrderedDict(file_tuples)
     patch_length, patch_height, patch_width = shape
     done = 0
-    if not hasattr(rng, 'random_integers'):
-        rng = numpy.random.RandomState(rng)
+    rng = make_np_rng(rng, which_method="random_integers")
     while done < n_patches:
         frame = numpy.random.random_integers(0, len(frame_lookup) - 1)
         filename, file_length, frame_no = frame_lookup[frame]
