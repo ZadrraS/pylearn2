@@ -5,7 +5,7 @@ __authors__ = 'Ian Goodfellow'
 __copyright__ = "Copyright 2013, Universite de Montreal"
 
 from pylearn2.costs.cost import DefaultDataSpecsMixin, Cost
-
+from pylearn2.utils import sharedX
 
 class Dropout(DefaultDataSpecsMixin, Cost):
     """
@@ -66,6 +66,10 @@ class Dropout(DefaultDataSpecsMixin, Cost):
 
         if input_scales is None:
             input_scales = {}
+
+        for layer_name in input_include_probs:
+            input_include_probs[layer_name] = sharedX(input_include_probs[layer_name])
+            input_scales[layer_name] = sharedX(input_scales[layer_name])
 
         self.__dict__.update(locals())
         del self.self
