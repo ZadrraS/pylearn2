@@ -3,74 +3,97 @@ Autoencoders, denoising autoencoders, and stacked DAEs.
 """
 # Standard library imports
 import functools
-from itertools import izip
 import operator
 
 # Third-party imports
 import numpy
 import theano
 from theano import tensor
+from theano.compat.six.moves import zip as izip, reduce
 
 # Local imports
-from pylearn2.base import Block, StackedBlocks
+from pylearn2.blocks import Block, StackedBlocks
 from pylearn2.models import Model
 from pylearn2.utils import sharedX
 from pylearn2.utils.theano_graph import is_pure_elemwise
+from pylearn2.utils.rng import make_np_rng, make_theano_rng
 from pylearn2.space import VectorSpace
 
 theano.config.warn.sum_div_dimshuffle_bug = False
 
-if 0:
-    print 'WARNING: using SLOW rng'
-    RandomStreams = tensor.shared_randomstreams.RandomStreams
-else:
-    import theano.sandbox.rng_mrg
-    RandomStreams = theano.sandbox.rng_mrg.MRG_RandomStreams
+
+class AbstractAutoencoder(Model, Block):
+    """
+    Abstract class for autoencoders.
+    """
+    def __init__(self):
+        super(AbstractAutoencoder, self).__init__()
+
+    def reconstruct(self, inputs):
+        """
+        Reconstruct (decode) the inputs after mapping through the encoder.
+
+        Parameters
+        ----------
+        inputs : tensor_like or list of tensor_likes
+            Theano symbolic (or list thereof) representing the input
+            minibatch(es) to be encoded and reconstructed. Assumed to be
+            2-tensors, with the first dimension indexing training examples
+            and the second indexing data dimensions.
+
+        Returns
+        -------
+        reconstructed : tensor_like or list of tensor_like
+            Theano symbolic (or list thereof) representing the corresponding
+            reconstructed minibatch(es) after encoding/decoding.
+        """
+        return self.decode(self.encode(inputs))
 
 
-class Autoencoder(Block, Model):
+class Autoencoder(AbstractAutoencoder):
     """
     Base class implementing ordinary autoencoders.
 
     More exotic variants (denoising, contracting autoencoders) can inherit
     much of the necessary functionality and override what they need.
+
+    Parameters
+    ----------
+    nvis : int
+        Number of visible units (input dimensions) in this model.
+        A value of 0 indicates that this block will be left partially
+        initialized until later (e.g., when the dataset is loaded and
+        its dimensionality is known).  Note: There is currently a bug
+        when nvis is set to 0. For now, you should not set nvis to 0.
+    nhid : int
+        Number of hidden units in this model.
+    act_enc : callable or string
+        Activation function (elementwise nonlinearity) to use for the
+        encoder. Strings (e.g. 'tanh' or 'sigmoid') will be looked up as
+        functions in `theano.tensor.nnet` and `theano.tensor`. Use `None`
+        for linear units.
+    act_dec : callable or string
+        Activation function (elementwise nonlinearity) to use for the
+        decoder. Strings (e.g. 'tanh' or 'sigmoid') will be looked up as
+        functions in `theano.tensor.nnet` and `theano.tensor`. Use `None`
+        for linear units.
+    tied_weights : bool, optional
+        If `False` (default), a separate set of weights will be allocated
+        (and learned) for the encoder and the decoder function. If
+        `True`, the decoder weight matrix will be constrained to be equal
+        to the transpose of the encoder weight matrix.
+    irange : float, optional
+        Width of the initial range around 0 from which to sample initial
+        values for the weights.
+    rng : RandomState object or seed, optional
+        NumPy random number generator object (or seed to create one) used
+        to initialize the model parameters.
     """
+
     def __init__(self, nvis, nhid, act_enc, act_dec,
                  tied_weights=False, irange=1e-3, rng=9001):
         """
-        Allocate an autoencoder object.
-
-        Parameters
-        ----------
-        nvis : int
-            Number of visible units (input dimensions) in this model. \
-            A value of 0 indicates that this block will be left partially \
-            initialized until later (e.g., when the dataset is loaded and \
-            its dimensionality is known).  Note: There is currently a bug \
-            when nvis is set to 0. For now, you should not set nvis to 0.
-        nhid : int
-            Number of hidden units in this model.
-        act_enc : callable or string
-            Activation function (elementwise nonlinearity) to use for the \
-            encoder. Strings (e.g. 'tanh' or 'sigmoid') will be looked up as \
-            functions in `theano.tensor.nnet` and `theano.tensor`. Use `None` \
-            for linear units.
-        act_dec : callable or string
-            Activation function (elementwise nonlinearity) to use for the \
-            decoder. Strings (e.g. 'tanh' or 'sigmoid') will be looked up as \
-            functions in `theano.tensor.nnet` and `theano.tensor`. Use `None` \
-            for linear units.
-        tied_weights : bool, optional
-            If `False` (default), a separate set of weights will be allocated \
-            (and learned) for the encoder and the decoder function. If \
-            `True`, the decoder weight matrix will be constrained to be equal \
-            to the transpose of the encoder weight matrix.
-        irange : float, optional
-            Width of the initial range around 0 from which to sample initial \
-            values for the weights.
-        rng : RandomState object or seed
-            NumPy random number generator object (or seed to create one) used \
-            to initialize the model parameters.
+        WRITEME
         """
         super(Autoencoder, self).__init__()
         assert nvis > 0, "Number of visible units must be non-negative"
@@ -80,13 +103,11 @@ class Autoencoder(Block, Model):
         self.output_space = VectorSpace(nhid)
 
         # Save a few parameters needed for resizing
+        self.nvis = nvis
         self.nhid = nhid
         self.irange = irange
         self.tied_weights = tied_weights
-        if not hasattr(rng, 'randn'):
-            self.rng = numpy.random.RandomState(rng)
-        else:
-            self.rng = rng
+        self.rng = make_np_rng(rng, which_method="randn")
         self._initialize_hidbias()
         if nvis > 0:
             self._initialize_visbias(nvis)
@@ -96,7 +117,10 @@ class Autoencoder(Block, Model):
             self.weights = None
 
         seed = int(self.rng.randint(2 ** 30))
-        self.s_rng = RandomStreams(seed)
+
+        # why a theano rng? should we remove it?
+        self.s_rng = make_theano_rng(seed, which_method="uniform")
+
         if tied_weights and self.weights is not None:
             self.w_prime = self.weights.T
         else:
@@ -122,7 +146,7 @@ class Autoencoder(Block, Model):
                 return getattr(tensor, conf[conf_attr])
             else:
                 raise ValueError("Couldn't interpret %s value: '%s'" %
-                                    (conf_attr, conf[conf_attr]))
+                                 (conf_attr, conf[conf_attr]))
 
         self.act_enc = _resolve_callable(locals(), 'act_enc')
         self.act_dec = _resolve_callable(locals(), 'act_dec')
@@ -281,15 +305,15 @@ class Autoencoder(Block, Model):
         Parameters
         ----------
         inputs : tensor_like or list of tensor_likes
-            Theano symbolic (or list thereof) representing the input \
-            minibatch(es) to be encoded. Assumed to be 2-tensors, with the \
-            first dimension indexing training examples and the second \
+            Theano symbolic (or list thereof) representing the input
+            minibatch(es) to be encoded. Assumed to be 2-tensors, with the
+            first dimension indexing training examples and the second
             indexing data dimensions.
 
         Returns
         -------
         encoded : tensor_like or list of tensor_like
-            Theano symbolic (or list thereof) representing the corresponding \
+            Theano symbolic (or list thereof) representing the corresponding
             minibatch(es) after encoding.
         """
         if isinstance(inputs, tensor.Variable):
@@ -304,15 +328,15 @@ class Autoencoder(Block, Model):
         Parameters
         ----------
         hiddens : tensor_like or list of tensor_likes
-            Theano symbolic (or list thereof) representing the input \
-            minibatch(es) to be encoded. Assumed to be 2-tensors, with the \
-            first dimension indexing training examples and the second \
+            Theano symbolic (or list thereof) representing the input
+            minibatch(es) to be encoded. Assumed to be 2-tensors, with the
+            first dimension indexing training examples and the second
             indexing data dimensions.
 
         Returns
         -------
         decoded : tensor_like or list of tensor_like
-            Theano symbolic (or list thereof) representing the corresponding \
+            Theano symbolic (or list thereof) representing the corresponding
             minibatch(es) after decoding.
         """
         if self.act_dec is None:
@@ -323,26 +347,6 @@ class Autoencoder(Block, Model):
             return act_dec(self.visbias + tensor.dot(hiddens, self.w_prime))
         else:
             return [self.decode(v) for v in hiddens]
-
-    def reconstruct(self, inputs):
-        """
-        Reconstruct (decode) the inputs after mapping through the encoder.
-
-        Parameters
-        ----------
-        inputs : tensor_like or list of tensor_likes
-            Theano symbolic (or list thereof) representing the input \
-            minibatch(es) to be encoded and reconstructed. Assumed to be \
-            2-tensors, with the first dimension indexing training examples \
-            and the second indexing data dimensions.
-
-        Returns
-        -------
-        reconstructed : tensor_like or list of tensor_like
-            Theano symbolic (or list thereof) representing the corresponding \
-            reconstructed minibatch(es) after encoding/decoding.
-        """
-        return self.decode(self.encode(inputs))
 
     def __call__(self, inputs):
         """
@@ -360,8 +364,7 @@ class Autoencoder(Block, Model):
 
             WRITEME
         """
-
-        return self.weights.get_value(borrow = borrow)
+        return self.weights.get_value(borrow=borrow)
 
     def get_weights_format(self):
         """
@@ -369,47 +372,38 @@ class Autoencoder(Block, Model):
 
             WRITEME
         """
-
         return ['v', 'h']
-
-    # Use version defined in Model, rather than Block (which raises
-    # NotImplementedError).
-    get_input_space = Model.get_input_space
-    get_output_space = Model.get_output_space
 
 
 class DenoisingAutoencoder(Autoencoder):
     """
     A denoising autoencoder learns a representation of the input by
     reconstructing a noisy version of it.
+
+    Parameters
+    ----------
+    corruptor : object
+        Instance of a corruptor object to use for corrupting the
+        input.
+    nvis : int
+        WRITEME
+    nhid : int
+        WRITEME
+    act_enc : WRITEME
+    act_dec : WRITEME
+    tied_weights : bool, optional
+        WRITEME
+    irange : WRITEME
+    rng : WRITEME
+
+    Notes
+    -----
+    The remaining parameters are identical to those of the constructor
+    for the Autoencoder class; see the `Autoencoder.__init__` docstring
+    for details.
     """
     def __init__(self, corruptor, nvis, nhid, act_enc, act_dec,
                  tied_weights=False, irange=1e-3, rng=9001):
-        """
-        Allocate a denoising autoencoder object.
-
-        Parameters
-        ----------
-        corruptor : object
-            Instance of a corruptor object to use for corrupting the \
-            input.
-        nvis : int
-            WRITEME
-        nhid : int
-            WRITEME
-        act_enc : WRITEME
-        act_dec : WRITEME
-        tied_weights : bool
-            WRITEME
-        irange : WRITEME
-        rng : WRITEME
-
-        Notes
-        -----
-        The remaining parameters are identical to those of the constructor
-        for the Autoencoder class; see the `Autoencoder.__init__` docstring
-        for details.
-        """
         super(DenoisingAutoencoder, self).__init__(
             nvis,
             nhid,
@@ -429,15 +423,15 @@ class DenoisingAutoencoder(Autoencoder):
         Parameters
         ----------
         inputs : tensor_like or list of tensor_likes
-            Theano symbolic (or list thereof) representing the input \
-            minibatch(es) to be corrupted and reconstructed. Assumed to be \
-            2-tensors, with the first dimension indexing training examples \
+            Theano symbolic (or list thereof) representing the input
+            minibatch(es) to be corrupted and reconstructed. Assumed to be
+            2-tensors, with the first dimension indexing training examples
             and the second indexing data dimensions.
 
         Returns
         -------
         reconstructed : tensor_like or list of tensor_like
-            Theano symbolic (or list thereof) representing the corresponding \
+            Theano symbolic (or list thereof) representing the corresponding
             reconstructed minibatch(es) after corruption and encoding/decoding.
         """
         corrupted = self.corruptor(inputs)
@@ -449,13 +443,9 @@ class ContractiveAutoencoder(Autoencoder):
     A contracting autoencoder works like a regular autoencoder, and adds an
     extra term to its cost function.
     """
+
     @functools.wraps(Autoencoder.__init__)
     def __init__(self, *args, **kwargs):
-        """
-        .. todo::
-
-            WRITEME
-        """
         super(ContractiveAutoencoder, self).__init__(*args, **kwargs)
         dummyinput = tensor.matrix()
         if not is_pure_elemwise(self.act_enc(dummyinput), [dummyinput]):
@@ -515,17 +505,17 @@ class ContractiveAutoencoder(Autoencoder):
         Parameters
         ----------
         inputs : tensor_like or list of tensor_likes
-            Theano symbolic (or list thereof) representing the input \
-            minibatch(es) on which the penalty is calculated. Assumed to be \
-            2-tensors, with the first dimension indexing training examples \
+            Theano symbolic (or list thereof) representing the input
+            minibatch(es) on which the penalty is calculated. Assumed to be
+            2-tensors, with the first dimension indexing training examples
             and the second indexing data dimensions.
 
         Returns
         -------
         jacobian : tensor_like
-            3-dimensional tensor representing, for each mini-batch example, \
-            the Jacobian matrix of the encoder transformation. You can then \
-            apply the penalty you want on it, or use the contraction_penalty \
+            3-dimensional tensor representing, for each mini-batch example,
+            the Jacobian matrix of the encoder transformation. You can then
+            apply the penalty you want on it, or use the contraction_penalty
             method to have a default one.
         """
         # As long as act_enc is an elementwise operator, the Jacobian
@@ -542,21 +532,22 @@ class ContractiveAutoencoder(Autoencoder):
         Parameters
         ----------
         data : tuple containing one tensor_like or list of tensor_likes
-            Theano symbolic (or list thereof) representing the input \
-            minibatch(es) on which the penalty is calculated. Assumed to be \
-            2-tensors, with the first dimension indexing training examples \
+            Theano symbolic (or list thereof) representing the input
+            minibatch(es) on which the penalty is calculated. Assumed to be
+            2-tensors, with the first dimension indexing training examples
             and the second indexing data dimensions.
 
         Returns
         -------
         jacobian : tensor_like
-            1-dimensional tensor representing, for each mini-batch \
-            example, the penalty of the encoder transformation. Add this to \
+            1-dimensional tensor representing, for each mini-batch
+            example, the penalty of the encoder transformation. Add this to
             the output of a Cost object, such as SquaredError, to penalize it.
         """
         X = data
         act_grad = self._activation_grad(X)
-        frob_norm = tensor.dot(tensor.sqr(act_grad), tensor.sqr(self.weights).sum(axis=0))
+        frob_norm = tensor.dot(tensor.sqr(act_grad),
+                               tensor.sqr(self.weights).sum(axis=0))
         contract_penalty = frob_norm.sum() / X.shape[0]
         return tensor.cast(contract_penalty, X .dtype)
 
@@ -572,32 +563,31 @@ class ContractiveAutoencoder(Autoencoder):
 class HigherOrderContractiveAutoencoder(ContractiveAutoencoder):
     """
     Higher order contractive autoencoder. Adds higher orders regularization
+
+    Parameters
+    ----------
+    corruptor : object
+        Instance of a corruptor object to use for corrupting the input.
+    num_corruptions : integer
+        number of corrupted inputs to use
+    nvis : int
+        WRITEME
+    nhid : int
+        WRITEME
+    act_enc : WRITEME
+    act_dec : WRITEME
+    tied_weights : WRITEME
+    irange : WRITEME
+    rng : WRITEME
+
+    Notes
+    -----
+    The remaining parameters are identical to those of the constructor
+    for the Autoencoder class; see the `ContractiveAutoEncoder.__init__`
+    docstring for details.
     """
     def __init__(self, corruptor, num_corruptions, nvis, nhid, act_enc,
-                    act_dec, tied_weights=False, irange=1e-3, rng=9001):
-        """
-        Parameters
-        ----------
-        corruptor : object
-            Instance of a corruptor object to use for corrupting the input.
-        num_corruptions : integer
-            number of corrupted inputs to use
-        nvis : int
-            WRITEME
-        nhid : int
-            WRITEME
-        act_enc : WRITEME
-        act_dec : WRITEME
-        tied_weights : WRITEME
-        irange : WRITEME
-        rng : WRITEME
-
-        Notes
-        -----
-        The remaining parameters are identical to those of the constructor
-        for the Autoencoder class; see the `ContractiveAutoEncoder.__init__`
-        docstring for details.
-        """
+                 act_dec, tied_weights=False, irange=1e-3, rng=9001):
         super(HigherOrderContractiveAutoencoder, self).__init__(
             nvis,
             nhid,
@@ -609,7 +599,6 @@ class HigherOrderContractiveAutoencoder(ContractiveAutoencoder):
         )
         self.corruptor = corruptor
         self.num_corruptions = num_corruptions
-
 
     def higher_order_penalty(self, data):
         """
@@ -625,12 +614,12 @@ class HigherOrderContractiveAutoencoder(ContractiveAutoencoder):
         """
         X = data
 
-        corrupted_inputs = [self.corruptor(X) for times in\
+        corrupted_inputs = [self.corruptor(X) for times in
                             range(self.num_corruptions)]
 
-        hessian = tensor.concatenate([self.jacobian_h_x(X) - \
-                                self.jacobian_h_x(corrupted) for\
-                                corrupted in corrupted_inputs])
+        hessian = tensor.concatenate(
+            [self.jacobian_h_x(X) - self.jacobian_h_x(corrupted)
+             for corrupted in corrupted_inputs])
 
         return (hessian ** 2).mean()
 
@@ -648,16 +637,22 @@ class UntiedAutoencoder(Autoencoder):
     .. todo::
 
         WRITEME
-    """
-    def __init__(self, base):
-        """
-        .. todo::
 
-            WRITEME
-        """
-        if not base.tied_weights:
+    Parameters
+    ----------
+    base : WRITEME
+    """
+
+    def __init__(self, base):
+        if not (isinstance(base, Autoencoder) and base.tied_weights):
             raise ValueError("%s is not a tied-weights autoencoder" %
                              str(base))
+
+        super(UntiedAutoencoder, self).__init__(
+            nvis=base.nvis, nhid=base.nhid, act_enc=base.act_enc,
+            act_dec=base.act_dec, tied_weights=True, irange=base.irange,
+            rng=base.rng)
+
         self.weights = tensor.shared(base.weights.get_value(borrow=False),
                                      name='weights')
         self.visbias = tensor.shared(base.visbias.get_value(borrow=False),
@@ -669,24 +664,24 @@ class UntiedAutoencoder(Autoencoder):
         self._params = [self.visbias, self.hidbias, self.weights, self.w_prime]
 
 
-class DeepComposedAutoencoder(Autoencoder):
+class DeepComposedAutoencoder(AbstractAutoencoder):
     """
     A deep autoencoder composed of several single-layer
     autoencoders.
+
+    Parameters
+    ----------
+    autoencoders : list
+        A list of autoencoder objects.
     """
     def __init__(self, autoencoders):
-        """
-        Construct a deep autoencoder from several single layer autoencoders.
-
-        Parameters
-        ----------
-        autoencoders : list
-            A list of autoencoder objects.
-        """
+        super(DeepComposedAutoencoder, self).__init__()
         self.fn = None
         self.cpu_only = False
 
-        assert all([autoencoders[i].get_output_space().dim == autoencoders[i+1].get_input_space().dim for i in range(len(autoencoders)-1)])
+        assert all(pre.get_output_space().dim == post.get_input_space().dim
+                   for pre, post in izip(autoencoders[:-1], autoencoders[1:]))
+
         self.autoencoders = list(autoencoders)
         self.input_space = autoencoders[0].get_input_space()
         self.output_space = autoencoders[-1].get_output_space()
@@ -725,14 +720,14 @@ class DeepComposedAutoencoder(Autoencoder):
         return reduce(operator.add,
                       [ae.get_params() for ae in self.autoencoders])
 
-    def censor_updates(self, updates):
+    def _modify_updates(self, updates):
         """
         .. todo::
 
             WRITEME
         """
         for autoencoder in self.autoencoders:
-            autoencoder.censor_updates(updates)
+            autoencoder.modify_updates(updates)
 
 
 def build_stacked_ae(nvis, nhids, act_enc, act_dec,
@@ -743,9 +738,9 @@ def build_stacked_ae(nvis, nhids, act_enc, act_dec,
 
         WRITEME properly
 
-    Allocate a stack of autoencoders."""
-    if not hasattr(rng, 'randn'):
-        rng = numpy.random.RandomState(rng)
+    Allocate a stack of autoencoders.
+    """
+    rng = make_np_rng(rng, which_method='randn')
     layers = []
     final = {}
     # "Broadcast" arguments if they are singular, or accept sequences if
@@ -761,13 +756,12 @@ def build_stacked_ae(nvis, nhids, act_enc, act_dec,
     # size and the first k-1 hidden unit sizes.
     nviss = [nvis] + nhids[:-1]
     seq = izip(nhids, nviss,
-        final['act_enc'],
-        final['act_dec'],
-        final['corruptor'],
-        final['contracting'],
-        final['tied_weights'],
-        final['irange'],
-    )
+               final['act_enc'],
+               final['act_dec'],
+               final['corruptor'],
+               final['contracting'],
+               final['tied_weights'],
+               final['irange'],)
     # Create each layer.
     for (nhid, nvis, act_enc, act_dec, corr, cae, tied, ir) in seq:
         args = (nvis, nhid, act_enc, act_dec, tied, ir, rng)

@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 from theano.sandbox.linalg.ops import alloc_diag
 from pylearn2.models.s3c import S3C
 from pylearn2.models.s3c import SufficientStatistics
@@ -33,10 +35,14 @@ class TestS3C_Misc:
         try:
             self.tol = 1e-5
 
-
-            X = np.random.RandomState([1,2,3]).randn(1000,108)
-            m, D = X.shape
-            N = 300
+            if config.mode in ["DebugMode", "DEBUG_MODE"]:
+                X = np.random.RandomState([1, 2, 3]).randn(30, 108)
+                m, D = X.shape
+                N = 10
+            else:
+                X = np.random.RandomState([1, 2, 3]).randn(1000, 108)
+                m, D = X.shape
+                N = 300
 
             self.model = S3C(nvis = D,
                              nhid = N,
@@ -87,7 +93,7 @@ class TestS3C_Misc:
 
         res2 = res2.mean(dtype='float64')
 
-        print res1, res2
+        print(res1, res2)
 
         assert np.allclose(res1, res2)
 
@@ -128,10 +134,10 @@ class TestS3C_Misc:
         max_diff = np.abs(gv-av).max()
 
         if max_diff > self.tol:
-            print "gv"
-            print gv
-            print "av"
-            print av
+            print("gv")
+            print(gv)
+            print("av")
+            print(av)
             raise Exception("analytical gradient on alpha deviates from theano gradient on alpha by up to "+str(max_diff))
 
     def test_grad_W(self):
@@ -173,10 +179,10 @@ class TestS3C_Misc:
         max_diff = np.abs(gv-av).max()
 
         if max_diff > self.tol:
-            print "gv"
-            print gv
-            print "av"
-            print av
+            print("gv")
+            print(gv)
+            print("av")
+            print(av)
             raise Exception("analytical gradient on W deviates from theano gradient on W by up to "+str(max_diff))
 
 
@@ -246,10 +252,10 @@ class TestS3C_Misc:
         grad_analytical = function([H_var, S_var], analytical)(H,S)
 
         if not np.allclose(grad_theano, grad_analytical):
-            print 'grad theano: ',(grad_theano.min(), grad_theano.mean(), grad_theano.max())
-            print 'grad analytical: ',(grad_analytical.min(), grad_analytical.mean(), grad_analytical.max())
+            print('grad theano: ',(grad_theano.min(), grad_theano.mean(), grad_theano.max()))
+            print('grad analytical: ',(grad_analytical.min(), grad_analytical.mean(), grad_analytical.max()))
             ad = np.abs(grad_theano-grad_analytical)
-            print 'abs diff: ',(ad.min(),ad.mean(),ad.max())
+            print('abs diff: ',(ad.min(),ad.mean(),ad.max()))
             assert False
 
     def test_d_negent_d_h(self):
@@ -309,10 +315,10 @@ class TestS3C_Misc:
         grad_analytical = function([H_var, S_var], analytical, on_unused_input = 'ignore')(H,S)
 
         if not np.allclose(grad_theano, grad_analytical):
-            print 'grad theano: ',(grad_theano.min(), grad_theano.mean(), grad_theano.max())
-            print 'grad analytical: ',(grad_analytical.min(), grad_analytical.mean(), grad_analytical.max())
+            print('grad theano: ',(grad_theano.min(), grad_theano.mean(), grad_theano.max()))
+            print('grad analytical: ',(grad_analytical.min(), grad_analytical.mean(), grad_analytical.max()))
             ad = np.abs(grad_theano-grad_analytical)
-            print 'abs diff: ',(ad.min(),ad.mean(),ad.max())
+            print('abs diff: ',(ad.min(),ad.mean(),ad.max()))
             assert False
 
     def test_d_negent_h_d_h(self):
@@ -368,10 +374,10 @@ class TestS3C_Misc:
         grad_analytical = function([H_var, S_var], analytical, on_unused_input = 'ignore')(H,S)
 
         if not np.allclose(grad_theano, grad_analytical):
-            print 'grad theano: ',(grad_theano.min(), grad_theano.mean(), grad_theano.max())
-            print 'grad analytical: ',(grad_analytical.min(), grad_analytical.mean(), grad_analytical.max())
+            print('grad theano: ',(grad_theano.min(), grad_theano.mean(), grad_theano.max()))
+            print('grad analytical: ',(grad_analytical.min(), grad_analytical.mean(), grad_analytical.max()))
             ad = np.abs(grad_theano-grad_analytical)
-            print 'abs diff: ',(ad.min(),ad.mean(),ad.max())
+            print('abs diff: ',(ad.min(),ad.mean(),ad.max()))
             assert False
 
 
@@ -437,10 +443,10 @@ class TestS3C_Misc:
         grad_analytical = function([H_var, S_var], analytical, on_unused_input = 'ignore')(H,S)
 
         if not np.allclose(grad_theano, grad_analytical):
-            print 'grad theano: ',(grad_theano.min(), grad_theano.mean(), grad_theano.max())
-            print 'grad analytical: ',(grad_analytical.min(), grad_analytical.mean(), grad_analytical.max())
+            print('grad theano: ',(grad_theano.min(), grad_theano.mean(), grad_theano.max()))
+            print('grad analytical: ',(grad_analytical.min(), grad_analytical.mean(), grad_analytical.max()))
             ad = np.abs(grad_theano-grad_analytical)
-            print 'abs diff: ',(ad.min(),ad.mean(),ad.max())
+            print('abs diff: ',(ad.min(),ad.mean(),ad.max()))
             assert False
 
 if __name__ == '__main__':

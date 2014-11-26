@@ -22,31 +22,33 @@ and the probability that :math:`h` is 1 is given by
 
     \sigma(2T \dot z)
 """
+
 __authors__ = ["Ian Goodfellow", "Vincent Dumoulin"]
 __copyright__ = "Copyright 2012, Universite de Montreal"
 __credits__ = ["Ian Goodfellow"]
 __license__ = "3-clause BSD"
-__maintainer__ = "Ian Goodfellow"
+__maintainer__ = "LISA Lab"
+
+import operator
 
 import numpy as np
 
-from collections import OrderedDict
-
 from theano import function
 from theano.gof.op import get_debug_values
+from theano.compat.six.moves import reduce
 from theano.compile.sharedvalue import SharedVariable
-from theano.sandbox.rng_mrg import MRG_RandomStreams
 import theano.tensor as T
 import warnings
 
+from pylearn2.compat import OrderedDict
 from pylearn2.expr.nnet import sigmoid_numpy
 from pylearn2.linear.matrixmul import MatrixMul
-from pylearn2.models.dbm import HiddenLayer
 from pylearn2.models.dbm import init_sigmoid_bias_from_array
-from pylearn2.models.dbm import VisibleLayer
+from pylearn2.models.dbm.layer import HiddenLayer, VisibleLayer
 from pylearn2.space import Conv2DSpace
 from pylearn2.space import VectorSpace
 from pylearn2.utils import sharedX
+from pylearn2.utils.rng import make_theano_rng
 
 
 def init_tanh_bias_from_marginals(dataset, use_y=False):
@@ -79,24 +81,23 @@ class IsingVisible(VisibleLayer):
     in a `VectorSpace`, with values in {-1, 1}.
 
     Implements the energy function term :math:`-\mathbf{b}^T \mathbf{h}`.
+
+    Parameters
+    ----------
+    nvis : int
+        The dimension of the space
+    beta : theano shared variable
+        Shared variable representing a multiplicative factor of the
+        energy function (the inverse temperature)
+    learn_beta : boolean, optional
+        Whether or not the inverse temperature should be considered as a
+        learned parameter
+    bias_from_marginals : `pylearn2.datasets.dataset.Dataset`, optional
+        A dataset whose marginals are used to initialize the visible
+        biases
     """
 
     def __init__(self, nvis, beta, learn_beta=False, bias_from_marginals=None):
-        """
-        Parameters
-        ----------
-        nvis : int
-            The dimension of the space
-        beta : theano shared variable
-            Shared variable representing a multiplicative factor of the \
-            energy function (the inverse temperature)
-        learn_beta : boolean, optional
-            Whether or not the inverse temperature should be considered as a \
-            learned parameter
-        bias_from_marginals : `pylearn2.datasets.dataset.Dataset`, optional
-            A dataset whose marginals are used to initialize the visible \
-            biases
-        """
         if not isinstance(beta, SharedVariable):
             raise ValueError("beta needs to be a theano shared variable.")
         self.__dict__.update(locals())
@@ -251,6 +252,28 @@ class IsingHidden(HiddenLayer):
 
     where :math:`\mathbf{W}` and :math:`\mathbf{b}` are parameters of this
     layer, and :math:`\mathbf{v}` is the upward state of the layer below.
+
+    Parameters
+    ----------
+    dim : WRITEME
+    layer_name : WRITEME
+    beta : theano shared variable
+        Shared variable representing a multiplicative factor of the energy
+        function (the inverse temperature)
+    learn_beta : boolean, optional
+        Whether or not the inverse temperature should be considered as a
+        learned parameter
+    irange : WRITEME
+    sparse_init : WRITEME
+    sparse_stdev : WRITEME
+    include_prob : float, optional
+        Probability of including a weight element in the set of weights
+        initialized to U(-irange, irange). If not included it is
+        initialized to 0.
+    init_bias : WRITEME
+    W_lr_scale : WRITEME
+    b_lr_scale : WRITEME
+    max_col_norm : WRITEME
     """
 
     def __init__(self,
@@ -266,24 +289,6 @@ class IsingHidden(HiddenLayer):
                  W_lr_scale=None,
                  b_lr_scale=None,
                  max_col_norm=None):
-        """
-        .. todo::
-
-            WRITEME properly
-
-        Parameters
-        ----------
-        include_prob : float, optional
-            Probability of including a weight element in the set of weights
-            initialized to U(-irange, irange). If not included it is
-            initialized to 0.
-        beta : theano shared variable
-            Shared variable representing a multiplicative factor of the energy
-            function (the inverse temperature)
-        learn_beta : boolean, optional
-            Whether or not the inverse temperature should be considered as a
-            learned parameter
-        """
         if not isinstance(beta, SharedVariable):
             raise ValueError("beta needs to be a theano shared variable.")
         self.__dict__.update(locals())
@@ -359,7 +364,7 @@ class IsingHidden(HiddenLayer):
         W, = self.transformer.get_params()
         assert W.name is not None
 
-    def censor_updates(self, updates):
+    def _modify_updates(self, updates):
         """
         .. todo::
 
@@ -681,7 +686,7 @@ class IsingHidden(HiddenLayer):
                         raise ValueError("self.dbm.batch_size is %d but got " +
                                          "shape of %d" % (self.dbm.batch_size,
                                                           sb.shape[0]))
-                    assert reduce(lambda x, y: x * y, sb.shape[1:]) == self.input_dim
+                    assert reduce(operator.mul, sb.shape[1:]) == self.input_dim
 
             state_below = self.input_space.format_as(state_below,
                                                      self.desired_space)
@@ -751,7 +756,7 @@ class IsingHidden(HiddenLayer):
                         raise ValueError("self.dbm.batch_size is %d but got " +
                                          "shape of %d" % (self.dbm.batch_size,
                                                           sb.shape[0]))
-                    assert reduce(lambda x, y: x * y, sb.shape[1:]) == self.input_dim
+                    assert reduce(operator.mul, sb.shape[1:]) == self.input_dim
 
             state_below = self.input_space.format_as(state_below,
                                                      self.desired_space)
@@ -787,29 +792,31 @@ class BoltzmannIsingVisible(VisibleLayer):
     Notes
     -----
     All parameter noise/clipping is handled by BoltzmannIsingHidden.
+
+    .. todo::
+
+        WRITEME properly
+
+    Parameters
+    ----------
+    nvis : int
+        Number of visible units
+    beta : theano shared variable
+        Shared variable representing a multiplicative factor of the energy
+        function (the inverse temperature)
+    learn_beta : boolean, optional
+        Whether or not the inverse temperature should be considered
+            as a learned parameter
+    bias_from_marginals : `pylearn2.datasets.dataset.Dataset`, optional
+        A dataset whose marginals are used to initialize the visible
+        biases
+    sampling_b_stdev : WRITEME
+    min_ising_b : WRITEME
+    max_ising_b : WRITEME
     """
 
     def __init__(self, nvis, beta, learn_beta=False, bias_from_marginals=None,
                  sampling_b_stdev=None, min_ising_b=None, max_ising_b=None):
-        """
-        .. todo::
-
-            WRITEME properly
-
-        Parameters
-        ----------
-        nvis : int
-            Number of visible units
-        beta : theano shared variable
-            Shared variable representing a multiplicative factor of the energy
-            function (the inverse temperature)
-        learn_beta : boolean, optional
-            Whether or not the inverse temperature should be considered
-                as a learned parameter
-        bias_from_marginals : `pylearn2.datasets.dataset.Dataset`, optional
-            A dataset whose marginals are used to initialize the visible
-            biases
-        """
 
         if not isinstance(beta, SharedVariable):
             raise ValueError("beta needs to be a theano shared " +
@@ -846,11 +853,9 @@ class BoltzmannIsingVisible(VisibleLayer):
         updates = OrderedDict()
         updates[self.boltzmann_bias] = self.boltzmann_bias
         updates[self.layer_above.W] = self.layer_above.W
-        self.censor_updates(updates)
-        f = function([], updates=updates)
-        f()
+        self.enforce_constraints()
 
-    def censor_updates(self, updates):
+    def _modify_updates(self, updates):
         """
         .. todo::
 
@@ -888,8 +893,7 @@ class BoltzmannIsingVisible(VisibleLayer):
             updates[self.boltzmann_bias] = bhn
 
         if self.noisy_sampling_b is not None:
-            theano_rng = \
-                MRG_RandomStreams(self.dbm.rng.randint(2**16))
+            theano_rng = make_theano_rng(None, self.dbm.rng.randint(2**16), which_method="normal")
 
             b = updates[self.boltzmann_bias]
             W_above = updates[self.layer_above.W]
@@ -919,7 +923,7 @@ class BoltzmannIsingVisible(VisibleLayer):
                     sharedX(np.zeros((self.dbm.batch_size, self.nvis)))
 
             if self.noisy_sampling_b is not None:
-                theano_rng = MRG_RandomStreams(self.dbm.rng.randint(2**16))
+                theano_rng = make_theano_rng(None, self.dbm.rng.randint(2**16), which_method="normal")
 
                 b = self.boltzmann_bias
                 W_above = self.layer_above.W
@@ -1105,8 +1109,38 @@ class BoltzmannIsingVisible(VisibleLayer):
 class BoltzmannIsingHidden(HiddenLayer):
     """
     An IsingHidden whose parameters are defined in Boltzmann machine space.
-    """
 
+    .. todo::
+
+        WRITEME properly
+
+    Parameters
+    ----------
+    dim : WRITEME
+    layer_name : WRITEME
+    layer_below : WRITEME
+    beta : theano shared variable
+        Shared variable representing a multiplicative factor of the energy
+        function (the inverse temperature)
+    learn_beta : boolean, optional
+        Whether or not the inverse temperature should be considered as a
+        learned parameter
+    irange : WRITEME
+    sparse_init : WRITEME
+    sparse_stdev : WRITEME
+    include_prob : WRITEME
+    init_bias : WRITEME
+    W_lr_scale : WRITEME
+    b_lr_scale : WRITEME
+    beta_lr_scale : WRITEME
+    max_col_norm : WRITEME
+    min_ising_b : WRITEME
+    max_ising_b : WRITEME
+    min_ising_W : WRITEME
+    max_ising_W : WRITEME
+    sampling_W_stdev : WRITEME
+    sampling_b_stdev : WRITEME
+    """
     def __init__(self,
                  dim,
                  layer_name,
@@ -1128,31 +1162,6 @@ class BoltzmannIsingHidden(HiddenLayer):
                  max_ising_W=None,
                  sampling_W_stdev=None,
                  sampling_b_stdev=None):
-        """
-        .. todo::
-
-            WRITEME properly
-
-        include_prob: probability of including a weight element in the set
-                 of weights initialized to U(-irange, irange). If not
-                 included it is initialized to 0.
-        beta: shared variable representing a multiplicative factor of
-                 the energy function (the inverse temperature)
-        learn_beta: whether or not the inverse temperature should be considered
-                 as a learned parameter
-
-        Parameters
-        ----------
-        beta : theano shared variable
-            Shared variable representing a multiplicative factor of the energy
-            function (the inverse temperature)
-        learn_beta : boolean, optional
-            Whether or not the inverse temperature should be considered
-                as a learned parameter
-        bias_from_marginals : `pylearn2.datasets.dataset.Dataset`, optional
-            A dataset whose marginals are used to initialize the visible
-            biases
-        """
         if not isinstance(beta, SharedVariable):
             raise ValueError("beta needs to be a theano shared variable.")
         self.__dict__.update(locals())
@@ -1251,11 +1260,9 @@ class BoltzmannIsingHidden(HiddenLayer):
         updates[self.W] = self.W
         if self.layer_above is not None:
             updates[self.layer_above.W] = self.layer_above.W
-        self.censor_updates(updates)
-        f = function([], updates=updates)
-        f()
+        self.enforce_constraints()
 
-    def censor_updates(self, updates):
+    def _modify_updates(self, updates):
         """
         .. todo::
 
@@ -1324,7 +1331,7 @@ class BoltzmannIsingHidden(HiddenLayer):
             updates[self.boltzmann_b] = bhn
 
         if self.noisy_sampling_W is not None:
-            theano_rng = MRG_RandomStreams(self.dbm.rng.randint(2**16))
+            theano_rng = make_theano_rng(None, self.dbm.rng.randint(2**16), which_method="normal")
 
             W = updates[self.W]
             ising_W = 0.25 * W
@@ -1366,7 +1373,7 @@ class BoltzmannIsingHidden(HiddenLayer):
                     sharedX(np.zeros((self.dbm.batch_size, self.dim)))
 
             if self.noisy_sampling_b is not None:
-                theano_rng = MRG_RandomStreams(self.dbm.rng.randint(2**16))
+                theano_rng = make_theano_rng(None, self.dbm.rng.randint(2**16), which_method="normal")
 
                 b = self.boltzmann_b
                 if self.layer_above is not None:
@@ -1754,7 +1761,7 @@ class BoltzmannIsingHidden(HiddenLayer):
                         raise ValueError("self.dbm.batch_size is %d but got " +
                                          "shape of %d" % (self.dbm.batch_size,
                                                           sb.shape[0]))
-                    assert reduce(lambda x, y: x * y, sb.shape[1:]) == self.input_dim
+                    assert reduce(operator.mul, sb.shape[1:]) == self.input_dim
 
             state_below = self.input_space.format_as(state_below,
                                                      self.desired_space)
@@ -1820,7 +1827,7 @@ class BoltzmannIsingHidden(HiddenLayer):
                         raise ValueError("self.dbm.batch_size is %d but got " +
                                          "shape of %d" % (self.dbm.batch_size,
                                                           sb.shape[0]))
-                    assert reduce(lambda x, y: x * y, sb.shape[1:]) == self.input_dim
+                    assert reduce(operator.mul, sb.shape[1:]) == self.input_dim
 
             state_below = self.input_space.format_as(state_below,
                                                      self.desired_space)

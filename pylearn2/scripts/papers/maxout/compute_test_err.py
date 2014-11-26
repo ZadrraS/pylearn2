@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 from pylearn2.utils import py_integer_types
 from pylearn2.utils import serial
 from pylearn2.config import yaml_parse
@@ -17,7 +19,6 @@ test = test.get_test_set()
 assert test.X.shape[0] == 10000
 
 test.X = test.X.astype('float32')
-test.y = test.y.astype('float32')
 
 import theano.tensor as T
 
@@ -40,21 +41,23 @@ batch_acc = function([Xb,yb],[mf1acc])
 # The averaging math assumes batches are all same size
 assert test.X.shape[0] % batch_size == 0
 
+
 def accs():
     mf1_accs = []
-    assert isinstance(test.X.shape[0], (int, long))
+    assert isinstance(test.X.shape[0], py_integer_types)
     assert isinstance(batch_size, py_integer_types)
-    for i in xrange(test.X.shape[0]/batch_size):
-        print i
-        x_arg = test.X[i*batch_size:(i+1)*batch_size,:]
+    iterator = test.iterator(mode = 'even_sequential',
+                            batch_size = batch_size,
+                            data_specs = model.cost_from_X_data_specs())
+    for item in iterator:
+        x_arg, y_arg = item
         if Xb.ndim > 2:
             x_arg = test.get_topological_view(x_arg)
-        mf1_accs.append( batch_acc(x_arg,
-            test.y[i*batch_size:(i+1)*batch_size,:])[0])
+        mf1_accs.append(batch_acc(x_arg, y_arg)[0])
     return sum(mf1_accs) / float(len(mf1_accs))
 
 
 result = accs()
 
+print(1. - result)
 
-print 1. - result

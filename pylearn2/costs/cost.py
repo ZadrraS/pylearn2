@@ -1,103 +1,93 @@
 """
-Classes representing loss functions.
-Currently, these are primarily used to specify
-the objective function for the SGD and BGD
-training algorithms.
+Classes representing cost functions.
+
+Currently, these are primarily used to specify the objective function for
+the SGD and BGD training algorithms.
 """
 
 import functools
+import logging
 import warnings
-from itertools import izip
 
+from theano.compat.six.moves import reduce
 import theano.tensor as T
-from theano.compat.python2x import OrderedDict
+from theano.compat.six.moves import zip as izip
 
+from pylearn2.compat import OrderedDict
 from pylearn2.utils import safe_zip
 from pylearn2.utils import safe_union
 from pylearn2.space import CompositeSpace, NullSpace
 from pylearn2.utils.data_specs import DataSpecsMapping
+from pylearn2.utils.exc import reraise_as
 
 
-class DefaultDataSpecsMixin(object):
-    """
-    .. todo::
-
-        WRITEME
-    """
-    def get_data_specs(self, model):
-        """
-        .. todo::
-
-            WRITEME
-        """
-        if self.supervised:
-            space = CompositeSpace([model.get_input_space(),
-                                    model.get_output_space()])
-            sources = (model.get_input_source(), model.get_target_source())
-            return (space, sources)
-        else:
-            return (model.get_input_space(), model.get_input_source())
-
-
-class NullDataSpecsMixin(object):
-    """
-    .. todo::
-
-        WRITEME
-    """
-    def get_data_specs(self, model):
-        """
-        .. todo::
-
-            WRITEME
-        """
-        return (NullSpace(), '')
+logger = logging.getLogger(__name__)
 
 
 class Cost(object):
     """
-    Represents a cost that can be called either as a supervised cost or an
-    unsupervised cost.
+    Represents an objective function to be minimized by some
+    `TrainingAlgorithm`.
+
+    Notes
+    -----
+    While functions may be represented just as theano graphs,
+    this class allows us to add extra functionality. The
+    `get_gradients` methods allows us to use a method other
+    than `theano.tensor.grad` to compute the gradient of the
+    cost function. This enables using approximate gradients
+    of cost functions that are not differentiable or whose
+    true gradient is computationally intractable. Additionally,
+    the get_monitoring_channels method allows monitoring of
+    quantities that are useful when training with a given
+    objective function (such as termination criteria that are
+    usually used with the function).
     """
 
+    # TODO: remove this when it is no longer necessary, it should be
+    # mostly phased out due to the new data_specs interface.
     # If True, the data argument to expr and get_gradients must be a
     # (X, Y) pair, and Y cannot be None.
     supervised = False
 
     def expr(self, model, data, ** kwargs):
         """
-        .. todo::
-
-            WRITEME
-
-        Parameters
-        ----------
-        model: a pylearn2 Model instance
-        data : a batch in cost.get_data_specs() form
+        Returns a theano expression for the cost function.
 
         Returns a symbolic expression for a cost function applied to the
         minibatch of data.
         Optionally, may return None. This represents that the cost function
         is intractable but may be optimized via the get_gradients method.
 
+        Parameters
+        ----------
+        model : a pylearn2 Model instance
+        data : a batch in cost.get_data_specs() form
+        kwargs : dict
+            Optional extra arguments. Not used by the base class.
         """
         raise NotImplementedError(str(type(self)) + " does not implement "
                                   "expr.")
 
     def get_gradients(self, model, data, ** kwargs):
         """
-        .. todo::
+        Provides the gradients of the cost function with respect to the model
+        parameters.
 
-            WRITEME
+        These are not necessarily those obtained by theano.tensor.grad
+        --you may wish to use approximate or even intentionally incorrect
+        gradients in some cases.
 
         Parameters
         ----------
         model : a pylearn2 Model instance
         data : a batch in cost.get_data_specs() form
+        kwargs : dict
+            Optional extra arguments, not used by the base class.
 
         Returns
         -------
-        gradients: OrderedDict
+        gradients : OrderedDict
             a dictionary mapping from the model's parameters
             to their gradients
             The default implementation is to compute the gradients
@@ -105,7 +95,7 @@ class Cost(object):
             However, subclasses may return other values for the gradient.
             For example, an intractable cost may return a sampling-based
             approximation to its gradient.
-        updates: OrderedDict
+        updates : OrderedDict
             a dictionary mapping shared variables to updates that must
             be applied to them each time these gradients are computed.
             This is to facilitate computation of sampling-based approximate
@@ -117,14 +107,12 @@ class Cost(object):
 
         try:
             cost = self.expr(model=model, data=data, **kwargs)
-        except TypeError, e:
+        except TypeError:
             # If anybody knows how to add type(self) to the exception message
             # but still preserve the stack trace, please do so
             # The current code does neither
-            e.message += " while calling " + str(type(self)) + ".expr"
-            print str(type(self))
-            print e.message
-            raise e
+            message = "Error while calling " + str(type(self)) + ".expr"
+            reraise_as(TypeError(message))
 
         if cost is None:
             raise NotImplementedError(str(type(self)) +
@@ -148,56 +136,124 @@ class Cost(object):
 
             WRITEME
 
+        .. todo::
+
+            how do you do prereqs in this setup? (I think PL changed
+            it, not sure if there still is a way in this context)
+
         Returns a dictionary mapping channel names to expressions for
         channel values.
 
-        WRITEME: how do you do prereqs in this setup? (there is a way,
-            but I forget how right now)
-
         Parameters
         ----------
-        model: the model to use to compute the monitoring channels
-        data: symbolic expressions for the monitoring data
+        model : Model
+            the model to use to compute the monitoring channels
+        data : batch
+            (a member of self.get_data_specs()[0])
+            symbolic expressions for the monitoring data
+        kwargs : dict
+            used so that custom algorithms can use extra variables
+            for monitoring.
 
-        kwargs: used so that custom algorithms can use extra variables
-                for monitoring.
-
+        Returns
+        -------
+        rval : dict
+            Maps channels names to expressions for channel values.
         """
         self.get_data_specs(model)[0].validate(data)
         return OrderedDict()
 
     def get_fixed_var_descr(self, model, data):
         """
-        .. todo::
-
-            WRITEME
-
         Subclasses should override this if they need variables held
         constant across multiple updates to a minibatch.
 
         TrainingAlgorithms that do multiple updates to a minibatch should
-        respect this. See FixedVarDescr below for details.
+        respect this. See the FixedVarDescr class for details.
+
+        Parameters
+        ----------
+        model : Model
+        data : theano.gof.Variable or tuple
+            A valid member of the Space used to train `model` with this
+            cost.
+
+        Returns
+        -------
+        fixed_var_descr : FixedVarDescr
+            A description of how to hold the necessary variables constant
         """
         self.get_data_specs(model)[0].validate(data)
-        return FixedVarDescr()
+        fixed_var_descr = FixedVarDescr()
+        return fixed_var_descr
 
     def get_data_specs(self, model):
         """
-        .. todo::
+        Returns a specification of the Space the data should lie in and
+        its source (what part of the dataset it should come from).
 
-            WRITEME
+        Parameters
+        ----------
+        model : Model
+            The model to train with this cost
 
-        Returns a composite space, describing the format of the data
-        which the cost (and the model) expects.
+        Returns
+        -------
+        data_specs : tuple
+            The tuple should be of length two.
+            The first element of the tuple should be a Space (possibly a
+            CompositeSpace) describing how to format the data.
+            The second element of the tuple describes the source of the
+            data. It probably should be a string or nested tuple of strings.
+
+        See Also
+        --------
+        For many common cases, rather than implementing this method
+        yourself, you probably want
+        to just inherit from `DefaultDataSpecsMixin` or NullDataSpecsMixin.
+
+        Notes
+        -----
+        .. todo
+
+            figure out return format for sure. PL seems to have documented
+            this method incorrectly.
+
         """
         raise NotImplementedError(str(type(self)) + " does not implement " +
                                   "get_data_specs.")
+
+    def is_stochastic(self):
+        """
+        Returns True if the cost is stochastic.
+
+        Stochastic costs are incompatible with some optimization algorithms
+        that make multiple updates per minibatch, such as algorithms that
+        use line searches. These optimizations should raise a TypeError if
+        given a stochastic Cost, or issue a warning if given a Cost whose
+        `is_stochastic` method raises NotImplementedError.
+
+        Returns
+        -------
+        is_stochastic : bool
+            Whether the cost is stochastic. For example, dropout is
+            stochastic.
+        """
+
+        raise NotImplementedError(str(type(self)) + " needs to implement "
+                                  "is_stochastic.")
 
 
 class SumOfCosts(Cost):
     """
     Combines multiple costs by summing them.
+
+    Parameters
+    ----------
+    costs : list
+        List of Cost objects or (coeff, Cost) pairs
     """
+
     def __init__(self, costs):
         """
         Initialize the SumOfCosts object and make sure that the list of costs
@@ -205,7 +261,7 @@ class SumOfCosts(Cost):
 
         Parameters
         ----------
-        costs: list
+        costs : list
             List of Cost objects or (coeff, Cost) pairs
         """
         assert isinstance(costs, list)
@@ -227,7 +283,7 @@ class SumOfCosts(Cost):
                                  "Cost instance")
 
         # TODO: remove this when it is no longer necessary
-        self.supervised = any([cost.supervised for cost in self.costs])
+        self.supervised = any([cost_.supervised for cost_ in self.costs])
 
     def expr(self, model, data, ** kwargs):
         """
@@ -239,7 +295,7 @@ class SumOfCosts(Cost):
         model : pylearn2.models.model.Model
             the model for which we want to calculate the sum of costs
         data : flat tuple of tensor_like variables.
-            data has to follow the format defined by self.get_data_specs(), \
+            data has to follow the format defined by self.get_data_specs(),
             but this format will always be a flat tuple.
         """
         self.get_data_specs(model)[0].validate(data)
@@ -262,15 +318,15 @@ class SumOfCosts(Cost):
 
     def get_composite_data_specs(self, model):
         """
-        .. todo::
-
-            WRITEME
-
         Build and return a composite data_specs of all costs.
 
         The returned space is a CompositeSpace, where the components are
         the spaces of each of self.costs, in the same order. The returned
         source is a tuple of the corresponding sources.
+
+        Parameters
+        ----------
+        model : pylearn2.models.Model
         """
         spaces = []
         sources = []
@@ -286,10 +342,6 @@ class SumOfCosts(Cost):
 
     def get_composite_specs_and_mapping(self, model):
         """
-        .. todo::
-
-            WRITEME
-
         Build the composite data_specs and a mapping to flatten it, return both
 
         Build the composite data_specs described in `get_composite_specs`, and
@@ -298,6 +350,12 @@ class SumOfCosts(Cost):
         to request data, and nesting this data back to the composite
         data_specs, so it can be dispatched among the different sub-costs.
 
+        Parameters
+        ----------
+        model : pylearn2.models.Model
+
+        Notes
+        -----
         This is a helper function used by `get_data_specs` and `get_gradients`,
         and possibly other methods.
         """
@@ -307,12 +365,15 @@ class SumOfCosts(Cost):
 
     def get_data_specs(self, model):
         """
-        .. todo::
-
-            WRITEME
-
         Get a flat data_specs containing all information for all sub-costs.
 
+        Parameters
+        ----------
+        model : pylearn2.models.Model
+            TODO WRITEME
+
+        Notes
+        -----
         This data_specs should be non-redundant. It is built by flattening
         the composite data_specs returned by `get_composite_specs`.
 
@@ -327,12 +388,8 @@ class SumOfCosts(Cost):
         data_specs = (flat_composite_space, flat_sources)
         return data_specs
 
+    @functools.wraps(Cost.get_gradients)
     def get_gradients(self, model, data, ** kwargs):
-        """
-        .. todo::
-
-            WRITEME
-        """
         indiv_results = []
         composite_specs, mapping = self.get_composite_specs_and_mapping(model)
         nested_data = mapping.nest(data)
@@ -366,12 +423,8 @@ class SumOfCosts(Cost):
 
         return grads, updates
 
+    @functools.wraps(Cost.get_monitoring_channels)
     def get_monitoring_channels(self, model, data, ** kwargs):
-        """
-        .. todo::
-
-            WRITEME
-        """
         self.get_data_specs(model)[0].validate(data)
         rval = OrderedDict()
         composite_specs, mapping = self.get_composite_specs_and_mapping(model)
@@ -384,10 +437,10 @@ class SumOfCosts(Cost):
                                                         **kwargs)
                 rval.update(channels)
             except TypeError:
-                print ('SumOfCosts.get_monitoring_channels encountered '
-                       'TypeError while calling ' +
-                       str(type(cost)) + '.get_monitoring_channels')
-                raise
+                reraise_as(Exception('SumOfCosts.get_monitoring_channels '
+                                     'encountered TypeError while calling {0}'
+                                     '.get_monitoring_channels'.format(
+                                         type(cost))))
 
             value = cost.expr(model, cost_data, ** kwargs)
             if value is not None:
@@ -403,6 +456,13 @@ class SumOfCosts(Cost):
         .. todo::
 
             WRITEME
+
+        Parameters
+        ----------
+        model : Model
+        data : theano.gof.Variable or tuple
+            A valid member of the Space defined by
+            self.get_data_specs(model)[0]
         """
         data_specs = self.get_data_specs(model)
         data_specs[0].validate(data)
@@ -412,67 +472,82 @@ class SumOfCosts(Cost):
         descrs = [cost.get_fixed_var_descr(model, cost_data)
                   for cost, cost_data in safe_zip(self.costs, nested_data)]
 
-        rval = FixedVarDescr()
-        rval.data_specs = data_specs
-        rval.on_load_batch = []
-        # To avoid calling the same function more than once
-        on_load_batch_seen = []
-
-        for i, descr in enumerate(descrs):
-            # We assume aliasing is a bug
-            assert descr.fixed_vars is not rval.fixed_vars
-            assert descr.on_load_batch is not rval.on_load_batch
-
-            for key in descr.fixed_vars:
-                if key in rval.fixed_vars:
-                    raise ValueError("Cannot combine these FixedVarDescrs, "
-                                     "two different ones contain %s" % key)
-            rval.fixed_vars.update(descr.fixed_vars)
-
-            for on_load in descr.on_load_batch:
-                if on_load in on_load_batch_seen:
-                    continue
-                # Using default argument binds the variables used in the lambda
-                # function to the value they have when the lambda is defined.
-                new_on_load = (lambda batch, mapping=mapping, i=i,
-                               on_load=on_load:
-                               on_load(mapping.nest(batch)[i]))
-                rval.on_load_batch.append(new_on_load)
-
-        return rval
+        return reduce(merge, descrs)
 
 
-def scaled_cost(cost, scaling):
+class NullDataSpecsMixin(object):
     """
-    Deprecated. Switch to SumOfCosts([[scaling, cost]]), or just quit using it.
+    Use multiple inheritance with both this object and Cost in order to
+    obtain a data specification corresponding to not using data at all.
 
-    Parameters
-    ----------
-    cost: Cost
-        cost to be scaled
-    scaling : float
-        scaling of the cost
+    Due to method resolution order, you want Cost to appear after
+    NullDataSpecsMixin in the superclass list.
     """
 
-    warnings.warn("""\
-scaled_cost is deprecated and may be removed on or after 2014-08-05.
-SumOfCosts allows you to scale individual terms, and if this is the only cost,
-you may as well just change the learning rate.""")
+    def get_data_specs(self, model):
+        """
+        Provides an implementation of `Cost.expr`.
 
-    return SumOfCosts([[scaling, cost]])
+        Returns data specifications corresponding to not using any
+        data at all.
+
+        Parameters
+        ----------
+        model : pylearn2.models.Model
+        """
+
+        return (NullSpace(), '')
+
+
+class DefaultDataSpecsMixin(object):
+    """
+    Use multiple inheritance with both this object and Cost in order to
+    obtain the default data specification.
+
+    Due to method resolution order, you want Cost to appear after
+    DefaultDataSpecsMixin in the superclass list.
+    """
+
+    def get_data_specs(self, model):
+        """
+        Provides a default data specification.
+
+        The cost requests input features from the model's input space and
+        input source. `self` must contain a bool field called `supervised`.
+        If this field is True, the cost requests targets as well.
+
+        Parameters
+        ----------
+        model : pylearn2.models.Model
+            TODO WRITEME
+        """
+        if self.supervised:
+            space = CompositeSpace([model.get_input_space(),
+                                    model.get_target_space()])
+            sources = (model.get_input_source(), model.get_target_source())
+            return (space, sources)
+        else:
+            return (model.get_input_space(), model.get_input_source())
 
 
 class LpPenalty(NullDataSpecsMixin, Cost):
     """
     L-p penalty of the tensor variables provided.
+
+    Parameters
+    ----------
+    variables : list
+        list of tensor variables to be regularized
+    p : int
+        p in "L-p penalty"
     """
     def __init__(self, variables, p):
         """
-        Parameters:
-        -----------
-        variables: list
+        Parameters
+        ----------
+        variables : list
             list of tensor variables to be regularized
-        p: int
+        p : int
             p in "L-p penalty"
         """
         self.variables = variables
@@ -480,13 +555,16 @@ class LpPenalty(NullDataSpecsMixin, Cost):
 
     def expr(self, model, data, **kwargs):
         """
-        .. todo::
-
-            WRITEME
-
         Return the L-p penalty term. The optional parameters are never used;
         they're only there to provide an interface that's consistent with
         the Cost superclass.
+
+        Parameters
+        ----------
+        model : a pylearn2 Model instance
+        data : a batch in cost.get_data_specs() form
+        kwargs : dict
+            Optional extra arguments. Not used by the base class.
         """
         # This Cost does not depend on any data, and get_data_specs does not
         # ask for any data, so we should not be provided with some.
@@ -501,24 +579,24 @@ class LpPenalty(NullDataSpecsMixin, Cost):
 
 class CrossEntropy(DefaultDataSpecsMixin, Cost):
     """
-    .. todo::
-
-        WRITEME
+    DEPRECATED
     """
-    def __init__(self):
-        """
-        .. todo::
 
-            WRITEME
-        """
-        warnings.warn("CrossEntropy is deprecated. You should use a model-specific cross entropy cost function. CrossEntropy will be removed on or after August 3, 2014", stacklevel=2)
+    def __init__(self):
+        warnings.warn("CrossEntropy is deprecated. You should use a "
+                      "model-specific cross entropy cost function. "
+                      "CrossEntropy will be removed on or after August "
+                      "3, 2014", stacklevel=2)
         self.supervised = True
 
     def expr(self, model, data, ** kwargs):
         """
-        .. todo::
+        DEPRECATED
 
-            WRITEME
+        Parameters
+        ----------
+        model : DEPRECATED
+        data : DEPRECATED
         """
         self.get_data_specs(model)[0].validate(data)
 
@@ -531,15 +609,27 @@ class CrossEntropy(DefaultDataSpecsMixin, Cost):
 class MethodCost(Cost):
     """
     A cost specified via the string name of a method of the model.
+
+    Parameters
+    ----------
+    method : a string specifying the name of the method of the model
+            that should be called to generate the objective function.
+    data_specs : a string specifying the name of a method/property of
+            the model that describe the data specs required by
+            method
     """
 
     def __init__(self, method, data_specs=None):
         """
+        .. todo::
+
+            WRITEME
+
         Parameters
         ----------
-        method: a string specifying the name of the method of the model
+        method : a string specifying the name of the method of the model
                 that should be called to generate the objective function.
-        data_specs: a string specifying the name of a method/property of
+        data_specs : a string specifying the name of a method/property of
                 the model that describe the data specs required by
                 method
         """
@@ -548,9 +638,15 @@ class MethodCost(Cost):
 
     def expr(self, model, data, *args, **kwargs):
         """
-        See Cost.expr for parameter specifications.
-
         Patches calls through to a user-specified method of the model
+
+        Parameters
+        ----------
+        model : pylearn2.models.model.Model
+            the model for which we want to calculate the sum of costs
+        data : flat tuple of tensor_like variables.
+            data has to follow the format defined by self.get_data_specs(),
+            but this format will always be a flat tuple.
         """
         self.get_data_specs(model)[0].validate(data)
         fn = getattr(model, self.method)
@@ -577,79 +673,94 @@ def _no_op(data):
     """
 
 
+class FixedVarDescrDataSpecsError(TypeError):
+    """
+    An error raised when code attempts to use the unused
+    data_specs field of FixedVarDescr
+    """
+
+
 class FixedVarDescr(object):
     """
     An object used to describe variables that influence the cost but that
     should be held fixed for each minibatch, even if the learning algorithm
     makes multiple changes to the parameters on this minibatch, i.e., for a
     line search, etc.
+
+    Attributes
+
+    - fixed_vars : dict
+        maps string names to shared variables or some sort of data
+        structure surrounding shared variables.
+        Any learning algorithm that does multiple updates on the same
+        minibatch should pass fixed_vars to the cost's expr and
+        get_gradient methods as keyword arguments.
+    - on_load_batch : list
+        A list of callable objects that the learning algorithm should
+        call with input data.
+        All of these callables must take an argument with the same
+        (space, source) format as the cost used for training.
+        TODO: It can be hard for a human user to know the right format
+        ahead of time if you use SumOfCosts, make a better way of handling
+        this.
+        PL had added a data_specs field to this class which
+        was meant to define the (space, source) format for each of
+        the members of on_load_batch, but the doc was internally
+        inconsistent, none of the TrainingAlgorithms obeyed it,
+        and the Cost's handling of it was buggy. IG removed this
+        broken functionality so that at least singleton costs can
+        used FixedVarDescr but it would be good to restore functionality
+        to composite costs.
     """
 
     def __init__(self):
-        """
-        .. todo::
-
-            WRITEME
-
-        fixed_vars: maps string names to shared variables or some sort of data
-                    structure surrounding shared variables.
-                    Any learning algorithm that does multiple updates on the
-                    same minibatch should pass fixed_vars to the cost's expr
-                    and get_gradient methods as keyword arguments.
-        """
         self.fixed_vars = {}
+        self.on_load_batch = []
 
-        """
-        A list of callable objects that the learning algorithm should
-        call with input data (formatted as self.data_specs) as appropriate
-        whenever a new batch of data is loaded.
-        This will update the shared variables mapped to by fixed_vars.
+    def _data_specs_err(self, x=None):
+        raise FixedVarDescrDataSpecsError("The data_specs field of "
+                                          "FixedVarDescr has been removed. "
+                                          "While this field existed and was "
+                                          "documented at one time, no "
+                                          "TrainingAlgorithm respected it. "
+                                          "The data_specs of all members of "
+                                          "on_load_batch must match those of "
+                                          "the cost.")
 
-        TODO: figure out why on_load_batch uses _no_op instead of an
-            empty list--either there is a reason and it should be
-            documented, or there is not reason and it should just be
-            an empty list.
-        """
-        self.on_load_batch = [_no_op]
-
-        """
-        A (space, source) pair describing the inputs of every function
-        in self.on_load_batch.
-        """
-        self.data_specs = (NullSpace(), '')
+    data_specs = property(_data_specs_err, _data_specs_err)
 
 
 def merge(left, right):
     """
-    .. todo::
-
-        WRITEME properly
-
     Combine two FixedVarDescrs
+
+    Parameters
+    ----------
+    left : FixedVarDescr
+    right : FixedVarDescr
+
+    Returns
+    -------
+    merged : FixedVarDescr
+        a new FixedVarDescr describing all variables and operations
+        described by `left` and `right`
     """
 
-    assert left is not right
     # We assume aliasing is a bug
+    assert left is not right
     assert left.fixed_vars is not right.fixed_vars
     assert left.on_load_batch is not right.on_load_batch
 
-    rval = FixedVarDescr()
+    merged = FixedVarDescr()
     for key in left.fixed_vars:
         if key in right.fixed_vars:
             raise ValueError("Can't merge these FixedVarDescrs, "
                              "both contain " + key)
     assert not any([key in left.fixed_vars for key in right.fixed_vars])
-    rval.fixed_vars.update(left.fixed_vars)
-    rval.fixed_vars.update(right.fixed_vars)
+    merged.fixed_vars.update(left.fixed_vars)
+    merged.fixed_vars.update(right.fixed_vars)
 
-    if left.data_specs == right.data_specs:
-        # Combining the on_load_batch functions is easy, as they take
-        # the same input arguments
-        rval.data_specs = left.fixed_vars
-        rval.on_load_batch = safe_union(left.on_load_batch,
-                                        right.on_load_batch)
-    else:
-        # We would have to build a composite data_specs
-        raise NotImplementedError()
+    merged.on_load_batch = safe_union(left.on_load_batch,
+                                      right.on_load_batch)
 
-    return rval
+    return merged

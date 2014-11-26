@@ -1,3 +1,11 @@
+from theano.compat.six.moves import cStringIO, xrange
+import numpy as np
+
+import theano.tensor as T
+from theano.tests import disturb_mem
+from theano.tests.record import Record, RecordMode
+from theano import shared
+
 from pylearn2.train import Train
 from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
 from pylearn2.models.model import Model
@@ -6,16 +14,9 @@ from pylearn2.utils import sharedX
 from pylearn2.training_algorithms.bgd import BGD
 from pylearn2.termination_criteria import EpochCounter
 from pylearn2.costs.cost import Cost
-import theano.tensor as T
-import numpy as np
-import cStringIO
-from pylearn2.devtools.record import Record
-from pylearn2.devtools.record import RecordMode
-from theano.tests import disturb_mem
 from pylearn2.utils import safe_union
 from pylearn2.utils import safe_izip
 from pylearn2.utils.data_specs import DataSpecsMapping
-from theano import shared
 from pylearn2.utils import function
 from pylearn2.costs.cost import FixedVarDescr
 from pylearn2.costs.cost import SumOfCosts
@@ -32,6 +33,7 @@ class SoftmaxModel(Model):
     """
 
     def __init__(self, dim):
+        super(SoftmaxModel, self).__init__()
         self.dim = dim
         rng = np.random.RandomState([2012,9,25])
         self.P = sharedX( rng.uniform(-1.,1.,(dim,)))
@@ -114,7 +116,8 @@ def test_determinism():
     """
     Tests that apply nodes are all passed inputs
     with the same md5sums, apply nodes are run in same order, etc.
-    Uses disturb_mem to try to cause dictionaries to iterate in different orders, etc.
+    Uses disturb_mem to try to cause dictionaries to iterate in different
+    orders, etc.
     """
 
     def run_bgd(mode):
@@ -160,10 +163,12 @@ def test_determinism():
             """
 
             def __init__(self):
+                super(ManyParamsModel, self).__init__()
                 self.W1 = [sharedX(rng.randn(num_features, chunk_width)) for i
                     in xrange(num_chunks)]
                 disturb_mem.disturb_mem()
-                self.W2 = [sharedX(rng.randn(chunk_width)) for i in xrange(num_chunks)]
+                self.W2 = [sharedX(rng.randn(chunk_width)) for i in
+                        xrange(num_chunks)]
                 self._params = safe_union(self.W1, self.W2)
                 self.input_space = VectorSpace(num_features)
                 self.output_space = VectorSpace(1)
@@ -175,7 +180,8 @@ def test_determinism():
 
         class LotsOfSummingCost(Cost):
             """
-            Make a cost whose gradient on the parameters involves summing many terms together,
+            Make a cost whose gradient on the parameters involves summing many
+            terms together,
             so that T.grad is more likely to sum things in a random order.
             """
 
@@ -187,12 +193,13 @@ def test_determinism():
                 disturb_mem.disturb_mem()
                 def mlp_pred(non_linearity):
                     Z = [T.dot(X, W) for W in model.W1]
-                    H = map(non_linearity, Z)
+                    H = [non_linearity(z) for z in Z]
                     Z = [T.dot(h, W) for h, W in safe_izip(H, model.W2)]
                     pred = sum(Z)
                     return pred
 
-                nonlinearity_predictions = map(mlp_pred, [T.nnet.sigmoid, T.nnet.softplus, T.sqr, T.sin])
+                nonlinearity_predictions = map(mlp_pred, [T.nnet.sigmoid,
+                    T.nnet.softplus, T.sqr, T.sin])
                 pred = sum(nonlinearity_predictions)
                 disturb_mem.disturb_mem()
 
@@ -231,13 +238,13 @@ def test_determinism():
 
 
 
-    output = cStringIO.StringIO()
+    output = cStringIO()
     record = Record(file_object=output, replay=False)
     record_mode = RecordMode(record)
 
     run_bgd(record_mode)
 
-    output = cStringIO.StringIO(output.getvalue())
+    output = cStringIO(output.getvalue())
     playback = Record(file_object=output, replay=True)
     playback_mode = RecordMode(playback)
 
@@ -251,6 +258,20 @@ def test_fixed_vars():
     Checks that the costs' expr and get_gradients methods
     are called with the right parameters and that the updates
     functions are called the right number of times.
+    """
+
+    """
+    Notes: this test is fairly messy. PL made some change to how
+    FixedVarDescr worked. FixedVarDescr got an added data_specs
+    field. But BGD itself was never changed to obey this data_specs.
+    Somehow these tests passed regardless. It looks like PL just built
+    a lot of machinery into the test itself to make the individual
+    callbacks reformat data internally. This mechanism required the
+    data_specs field to be present. Weirdly, the theano functions
+    never actually used any of the data, so their data_specs should
+    have just been NullSpace anyway. IG deleted a lot of this useless
+    code from these tests but there is still a lot of weird stuff here
+    that he has not attempted to clean up.
     """
 
     rng = np.random.RandomState([2012, 11, 27, 9])
@@ -296,7 +317,8 @@ def test_fixed_vars():
             self.get_data_specs(model)[0].validate(data)
             assert unsup_aux_var is unsup_counter
             called[1] = True
-            gradients, updates = Cost.get_gradients(self, model, data, unsup_aux_var=unsup_aux_var)
+            gradients, updates = Cost.get_gradients(self, model, data,
+                    unsup_aux_var=unsup_aux_var)
             updates[grad_counter] = grad_counter + 1
             return gradients, updates
 
@@ -305,20 +327,14 @@ def test_fixed_vars():
             data_specs[0].validate(data)
             rval = FixedVarDescr()
             rval.fixed_vars = {'unsup_aux_var': unsup_counter}
-            rval.data_specs = data_specs
 
             # The input to function should be a flat, non-redundent tuple
             mapping = DataSpecsMapping(data_specs)
             data_tuple = mapping.flatten(data, return_tuple=True)
-            theano_func = function(data_tuple,
+            theano_func = function([],
                     updates=[(unsup_counter, unsup_counter + 1)])
-            # the on_load_batch function will take numerical data formatted
-            # as rval.data_specs, so we have to flatten it inside the
-            # returned function too.
-            # Using default argument binds the variables used in the lambda
-            # function to the value they have when the lambda is defined.
-            on_load = (lambda batch, mapping=mapping, theano_func=theano_func:
-                    theano_func(*mapping.flatten(batch, return_tuple=True)))
+            def on_load(batch, mapping=mapping, theano_func=theano_func):
+                return theano_func()
             rval.on_load_batch = [on_load]
 
             return rval
@@ -351,21 +367,11 @@ def test_fixed_vars():
             data_specs[0].validate(data)
             rval = FixedVarDescr()
             rval.fixed_vars = {'sup_aux_var': sup_counter}
-            rval.data_specs = data_specs
 
-            # data has to be flattened into a tuple before being passed
-            # to `function`.
-            mapping = DataSpecsMapping(data_specs)
-            flat_data = mapping.flatten(data, return_tuple=True)
-            theano_func = function(flat_data,
-                                 updates=[(sup_counter, sup_counter + 1)])
-            # the on_load_batch function will take numerical data formatted
-            # as rval.data_specs, so we have to flatten it inside the
-            # returned function too.
-            # Using default argument binds the variables used in the lambda
-            # function to the value they have when the lambda is defined.
-            on_load = (lambda batch, mapping=mapping, theano_func=theano_func:
-                    theano_func(*mapping.flatten(batch, return_tuple=True)))
+            theano_func = function([], updates=[(sup_counter,
+                sup_counter + 1)])
+            def on_load(data):
+                theano_func()
             rval.on_load_batch = [on_load]
             return rval
 

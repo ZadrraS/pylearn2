@@ -1,7 +1,15 @@
+"""
+.. todo::
+
+    WRITEME
+"""
+from __future__ import print_function
+
 import cPickle as pickle
 import itertools
 
 import numpy as np
+from theano.compat.six.moves import xrange
 import theano.tensor as T
 
 from pylearn2.expr.activations import rescaled_softmax
@@ -32,9 +40,14 @@ MAX_EPOCHS = 100
 BATCHES_PER_EPOCH = None # covers full training set
 BATCH_SIZE = 100
 
-ds = MNIST(which_set='train', one_hot=True)
+ds = MNIST(which_set='train')
 
 def test_train_ae():
+    """
+    .. todo::
+
+        WRITEME
+    """
     GC = GaussianCorruptor
 
     gsn = GSN.new(
@@ -66,7 +79,7 @@ def test_train_ae():
     trainer = Train(ds, gsn, algorithm=alg, save_path="gsn_ae_example.pkl",
                     save_freq=5)
     trainer.main_loop()
-    print "done training"
+    print("done training")
 
 def test_sample_ae():
     """
@@ -93,7 +106,7 @@ def test_sample_ae():
     # code to get log likelihood from kernel density estimator
     # this crashed on GPU (out of memory), but works on CPU
     pw = ParzenWindows(MNIST(which_set='test').X, .20)
-    print pw.get_ll(history)
+    print(pw.get_ll(history))
 
 def test_train_supervised():
     """
@@ -144,7 +157,7 @@ def test_train_supervised():
                     save_path="gsn_sup_example.pkl", save_freq=10,
                     extensions=[MonitorBasedLRAdjuster()])
     trainer.main_loop()
-    print "done training"
+    print("done training")
 
 def test_classify():
     """
@@ -158,7 +171,7 @@ def test_classify():
     # turn off corruption
     gsn._corrupt_switch = False
 
-    ds = MNIST(which_set='test', one_hot=True)
+    ds = MNIST(which_set='test')
     mb_data = ds.X
     y = ds.y
 
@@ -169,7 +182,7 @@ def test_classify():
         # error indices
         #np.sum(np.abs(y_hat - y), axis=1) != 0
 
-        print i, errors, errors / mb_data.shape[0]
+        print(i, errors, errors / mb_data.shape[0])
 
 def test_sample_supervised(idxs=None, noisy=True):
     """
@@ -180,7 +193,7 @@ def test_sample_supervised(idxs=None, noisy=True):
 
     gsn._corrupt_switch = noisy
 
-    ds = MNIST(which_set='test', one_hot=True)
+    ds = MNIST(which_set='test')
 
     if idxs is None:
         data = ds.X[100:150]
@@ -200,6 +213,11 @@ def test_sample_supervised(idxs=None, noisy=True):
     image.save("gsn_sup_example.png", tiled)
 
 def vis_samples(samples):
+    """
+    .. todo::
+
+        WRITEME
+    """
     from PIL import ImageDraw, ImageFont
     img = image.pil_from_ndarray(np.zeros((28, 28)))
 
@@ -246,7 +264,12 @@ def vis_samples(samples):
 
 # some utility methods for viewing MNIST characters without any GUI
 def print_char(A):
-    print a_to_s(A.round().reshape((28, 28)))
+    """
+    .. todo::
+
+        WRITEME
+    """
+    print(a_to_s(A.round().reshape((28, 28))))
 
 def a_to_s(A):
     """Prints binary array"""

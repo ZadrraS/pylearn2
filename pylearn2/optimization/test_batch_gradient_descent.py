@@ -1,7 +1,10 @@
+from __future__ import print_function
+
 from pylearn2.optimization.batch_gradient_descent import BatchGradientDescent
 import theano.tensor as T
 from pylearn2.utils import sharedX
 import numpy as np
+from theano.compat.six.moves import xrange
 from theano import config
 from theano.printing import min_informative_str
 
@@ -56,19 +59,20 @@ def test_batch_gradient_descent():
 
             #make sure the objective function is accurate to first 4 digits
             condition1 = not np.allclose(analytical_obj, actual_obj)
-            condition2 = np.abs(analytical_obj-actual_obj) >= 1e-4 * np.abs(analytical_obj)
+            condition2 = np.abs(analytical_obj-actual_obj) >= 1e-4 * \
+                    np.abs(analytical_obj)
 
             if (config.floatX == 'float64' and condition1) \
                     or (config.floatX == 'float32' and condition2):
-                print 'objective function value came out wrong on sample ',i
-                print 'analytical obj', analytical_obj
-                print 'actual obj',actual_obj
+                print('objective function value came out wrong on sample ',i)
+                print('analytical obj', analytical_obj)
+                print('actual obj',actual_obj)
 
                 """
                 The following section of code was used to verify that numerical
                 error can make the objective function look non-convex
 
-                print 'Checking for numerically induced non-convex behavior'
+                print('Checking for numerically induced non-convex behavior')
                 def f(x):
                     return 0.5 * np.dot(x,np.dot(A,x)) + np.dot(b,x) + c
 
@@ -79,25 +83,25 @@ def test_batch_gradient_descent():
 
                 x = actual_x.copy()
                 prev = f(x)
-                print prev
+                print(prev)
                 step_size = 1e-4
                 x += step_size * d
                 cur = f(x)
-                print cur
+                print(cur)
                 cur_sgn = np.sign(cur-prev)
                 flip_cnt = 0
                 for i in xrange(10000):
                     x += step_size * d
                     prev = cur
                     cur = f(x)
-                    print cur
+                    print(cur)
                     prev_sgn = cur_sgn
                     cur_sgn = np.sign(cur-prev)
                     if cur_sgn != prev_sgn:
-                        print 'flip'
+                        print('flip')
                         flip_cnt += 1
                         if flip_cnt > 1:
-                            print "Non-convex!"
+                            print("Non-convex!")
 
                             from matplotlib import pyplot as plt
                             y = []
@@ -112,7 +116,7 @@ def test_batch_gradient_descent():
 
                             assert False
 
-                print 'None found'
+                print('None found')
                 """
 
                 #print 'actual x',actual_x
@@ -126,41 +130,44 @@ def test_batch_gradient_descent():
                 minimizer._compute_grad(A,b,c)
                 x_grad = minimizer.param_to_grad_shared[x]
                 actual_grad =  x_grad.get_value()
-                correct_grad = 0.5 * np.dot(A,x.get_value())+ 0.5 * np.dot(A.T, x.get_value()) +b
+                correct_grad = 0.5 * np.dot(A,x.get_value())+ 0.5 * \
+                        np.dot(A.T, x.get_value()) +b
                 if not np.allclose(actual_grad, correct_grad):
-                    print 'gradient was wrong at convergence point'
-                    print 'actual grad: '
-                    print actual_grad
-                    print 'correct grad: '
-                    print correct_grad
-                    print 'max difference: ',np.abs(actual_grad-correct_grad).max()
+                    print('gradient was wrong at convergence point')
+                    print('actual grad: ')
+                    print(actual_grad)
+                    print('correct grad: ')
+                    print(correct_grad)
+                    print('max difference: ', end='')
+                    np.abs(actual_grad-correct_grad).max()
                     assert False
 
 
                 minimizer._normalize_grad()
                 d = minimizer.param_to_grad_shared[x].get_value()
                 step_len = ( np.dot(b,d) + 0.5 * np.dot(d,np.dot(A,actual_x)) \
-                        + 0.5 * np.dot(actual_x,np.dot(A,d)) ) / np.dot(d, np.dot(A,d))
+                        + 0.5 * np.dot(actual_x,np.dot(A,d)) ) \
+                        / np.dot(d, np.dot(A,d))
 
                 g = np.dot(A,actual_x)+b
                 deriv = np.dot(g,d)
 
-                print 'directional deriv at actual', deriv
-                print 'optimal step_len', step_len
+                print('directional deriv at actual', deriv)
+                print('optimal step_len', step_len)
                 optimal_x = actual_x - d * step_len
                 g = np.dot(A,optimal_x) + b
                 deriv = np.dot(g,d)
 
-                print 'directional deriv at optimal: ',deriv
+                print('directional deriv at optimal: ',deriv)
                 x.set_value(optimal_x)
-                print 'obj at optimal: ',minimizer.obj(A,b,c)
+                print('obj at optimal: ',minimizer.obj(A,b,c))
 
 
 
-                print 'eigenvalue range:'
+                print('eigenvalue range:')
                 val, vec = np.linalg.eig(A)
-                print (val.min(),val.max())
-                print 'condition number: ',(val.max()/val.min())
+                print((val.min(),val.max()))
+                print('condition number: ',(val.max()/val.min()))
                 assert False
 
 

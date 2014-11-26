@@ -2,6 +2,7 @@ __author__ = "Ian Goodfellow"
 
 from matplotlib import pyplot
 import sys
+from theano.compat.six.moves import xrange
 pyplot.hold(True)
 
 from pylearn2.utils import serial
@@ -12,7 +13,7 @@ smoothing = 1
 try:
     smoothing = int(model_paths[0])
     model_paths = model_paths[1:]
-except:
+except Exception:
     pass
 
 count = 0

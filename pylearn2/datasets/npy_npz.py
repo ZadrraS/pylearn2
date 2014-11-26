@@ -1,14 +1,16 @@
 """Objects for datasets serialized in the NumPy native format (.npy/.npz)."""
 import functools
 import numpy
-from theano import config
 from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
 
+
 class NpyDataset(DenseDesignMatrix):
+
     """A dense dataset based on a single array stored as a .npy file."""
+
     def __init__(self, file, mmap_mode=None):
         """
-        Creates an NpzDataset object.
+        Creates an NpyDataset object.
 
         Parameters
         ----------
@@ -24,6 +26,11 @@ class NpyDataset(DenseDesignMatrix):
         self._loaded = False
 
     def _deferred_load(self):
+        """
+        .. todo::
+
+            WRITEME
+        """
         self._loaded = True
         loaded = numpy.load(self._path)
         assert isinstance(loaded, numpy.ndarray), (
@@ -56,8 +63,10 @@ class NpyDataset(DenseDesignMatrix):
 
 
 class NpzDataset(DenseDesignMatrix):
-    """A dense dataset based on a single array from a .npz archive."""
-    def __init__(self, file, key):
+
+    """A dense dataset based on a .npz archive."""
+
+    def __init__(self, file, key, target_key=None):
         """
         Creates an NpzDataset object.
 
@@ -67,15 +76,28 @@ class NpzDataset(DenseDesignMatrix):
             A file-like object or string indicating a filename. Passed
             directly to `numpy.load`.
         key : str
-            A string indicating which key name to use to pull out a
-            single array from the dictionary-like object.
+            A string indicating which key name to use to pull out the
+            input data.
+        target_key : str, optional
+            A string indicating which key name to use to pull out the
+            output data.
         """
         loaded = numpy.load(file)
         assert not isinstance(loaded, numpy.ndarray), (
             "zipped groups of arrays (.npz) only"
         )
         assert key in loaded, "%s not found in loaded NPZFile" % key
-        if len(loaded[key].shape) == 2:
-            super(NpzDataset, self).__init__(X=loaded[key])
+
+        if target_key is not None:
+            assert target_key in loaded, \
+                "%s not found in loaded NPZFile" % target_key
+            y = loaded[target_key]
         else:
-            super(NpzDataset, self).__init__(topo_view=loaded[key])
+            y = None
+
+        if len(loaded[key].shape) == 2:
+            super(NpzDataset, self).__init__(X=loaded[key], y=y)
+        else:
+            super(NpzDataset, self).__init__(topo_view=loaded[key], y=y)
+
+        loaded.close()

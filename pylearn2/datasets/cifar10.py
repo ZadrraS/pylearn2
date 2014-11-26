@@ -3,31 +3,45 @@
 
     WRITEME
 """
-import os, cPickle, logging
+import os
+from theano.compat.six.moves import cPickle, xrange
+import logging
 _logger = logging.getLogger(__name__)
 
 import numpy as np
+import warnings
 N = np
-from pylearn2.datasets import dense_design_matrix
+from pylearn2.datasets import cache, dense_design_matrix
 from pylearn2.expr.preprocessing import global_contrast_normalize
+from pylearn2.utils import contains_nan
 
 
 class CIFAR10(dense_design_matrix.DenseDesignMatrix):
+
     """
     .. todo::
 
         WRITEME
+
+    Parameters
+    ----------
+    which_set : str
+        One of 'train', 'test'
+    center : WRITEME
+    rescale : WRITEME
+    gcn : float, optional
+        Multiplicative constant to use for global contrast normalization.
+        No global contrast normalization is applied, if None
+    start : WRITEME
+    stop : WRITEME
+    axes : WRITEME
+    toronto_prepro : WRITEME
+    preprocessor : WRITEME
     """
-    def __init__(self, which_set, center = False, rescale = False, gcn = None,
-            one_hot = False, start = None, stop = None, axes=('b', 0, 1, 'c'),
-            toronto_prepro = False, preprocessor = None):
-        """
-        .. todo::
 
-            WRITEME
-        """
-
-
+    def __init__(self, which_set, center=False, rescale=False, gcn=None,
+                 start=None, stop=None, axes=('b', 0, 1, 'c'),
+                 toronto_prepro = False, preprocessor = None):
         # note: there is no such thing as the cifar10 validation set;
         # pylearn1 defined one but really it should be user-configurable
         # (as it is here)
@@ -35,63 +49,53 @@ class CIFAR10(dense_design_matrix.DenseDesignMatrix):
         self.axes = axes
 
         # we define here:
-        dtype  = 'uint8'
+        dtype = 'uint8'
         ntrain = 50000
         nvalid = 0  # artefact, we won't use it
-        ntest  = 10000
+        ntest = 10000
 
         # we also expose the following details:
-        self.img_shape = (3,32,32)
+        self.img_shape = (3, 32, 32)
         self.img_size = N.prod(self.img_shape)
         self.n_classes = 10
         self.label_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
-                            'dog', 'frog','horse','ship','truck']
+                            'dog', 'frog', 'horse', 'ship', 'truck']
 
         # prepare loading
-        fnames = ['data_batch_%i' % i for i in range(1,6)]
-        lenx = N.ceil((ntrain + nvalid) / 10000.)*10000
-        x = N.zeros((lenx,self.img_size), dtype=dtype)
-        y = N.zeros(lenx, dtype=dtype)
+        fnames = ['data_batch_%i' % i for i in range(1, 6)]
+        lenx = N.ceil((ntrain + nvalid) / 10000.) * 10000
+        x = N.zeros((lenx, self.img_size), dtype=dtype)
+        y = N.zeros((lenx, 1), dtype=dtype)
 
         # load train data
         nloaded = 0
         for i, fname in enumerate(fnames):
             data = CIFAR10._unpickle(fname)
-            x[i*10000:(i+1)*10000, :] = data['data']
-            y[i*10000:(i+1)*10000] = data['labels']
+            x[i * 10000:(i + 1) * 10000, :] = data['data']
+            y[i * 10000:(i + 1) * 10000, 0] = data['labels']
             nloaded += 10000
-            if nloaded >= ntrain + nvalid + ntest: break;
+            if nloaded >= ntrain + nvalid + ntest:
+                break
 
         # load test data
         data = CIFAR10._unpickle('test_batch')
 
         # process this data
-        Xs = {
-                'train' : x[0:ntrain],
-                'test'  : data['data'][0:ntest]
-            }
+        Xs = {'train': x[0:ntrain],
+              'test': data['data'][0:ntest]}
 
-        Ys = {
-                'train' : y[0:ntrain],
-                'test'  : data['labels'][0:ntest]
-            }
+        Ys = {'train': y[0:ntrain],
+              'test': data['labels'][0:ntest]}
 
         X = N.cast['float32'](Xs[which_set])
         y = Ys[which_set]
 
-        if isinstance(y,list):
-            y = np.asarray(y)
+        if isinstance(y, list):
+            y = np.asarray(y).astype(dtype)
 
         if which_set == 'test':
             assert y.shape[0] == 10000
-
-
-        self.one_hot = one_hot
-        if one_hot:
-            one_hot = np.zeros((y.shape[0],10),dtype='float32')
-            for i in xrange(y.shape[0]):
-                one_hot[i,y[i]] = 1.
-            y = one_hot
+            y = y.reshape((y.shape[0], 1))
 
         if center:
             X -= 127.5
@@ -120,23 +124,25 @@ class CIFAR10(dense_design_matrix.DenseDesignMatrix):
             X = global_contrast_normalize(X, scale=gcn)
 
         if start is not None:
-            # This needs to come after the prepro so that it doesn't change the pixel
-            # means computed above for toronto_prepro
+            # This needs to come after the prepro so that it doesn't
+            # change the pixel means computed above for toronto_prepro
             assert start >= 0
             assert stop > start
             assert stop <= X.shape[0]
             X = X[start:stop, :]
-            y = y[start:stop]
+            y = y[start:stop, :]
             assert X.shape[0] == y.shape[0]
 
         if which_set == 'test':
             assert X.shape[0] == 10000
 
-        view_converter = dense_design_matrix.DefaultViewConverter((32,32,3), axes)
+        view_converter = dense_design_matrix.DefaultViewConverter((32, 32, 3),
+                                                                  axes)
 
-        super(CIFAR10,self).__init__(X = X, y = y, view_converter = view_converter)
+        super(CIFAR10, self).__init__(X=X, y=y, view_converter=view_converter,
+                                      y_labels=self.n_classes)
 
-        assert not np.any(np.isnan(self.X))
+        assert not contains_nan(self.X)
 
         if preprocessor:
             preprocessor.apply(self)
@@ -147,21 +153,22 @@ class CIFAR10(dense_design_matrix.DenseDesignMatrix):
 
             WRITEME
         """
-        #assumes no preprocessing. need to make preprocessors mark the new ranges
+        # assumes no preprocessing. need to make preprocessors mark the
+        # new ranges
         rval = X.copy()
 
-        #patch old pkl files
-        if not hasattr(self,'center'):
+        # patch old pkl files
+        if not hasattr(self, 'center'):
             self.center = False
-        if not hasattr(self,'rescale'):
+        if not hasattr(self, 'rescale'):
             self.rescale = False
-        if not hasattr(self,'gcn'):
+        if not hasattr(self, 'gcn'):
             self.gcn = False
 
         if self.gcn is not None:
             rval = X.copy()
             for i in xrange(rval.shape[0]):
-                rval[i,:] /= np.abs(rval[i,:]).max()
+                rval[i, :] /= np.abs(rval[i, :]).max()
             return rval
 
         if not self.center:
@@ -170,34 +177,35 @@ class CIFAR10(dense_design_matrix.DenseDesignMatrix):
         if not self.rescale:
             rval /= 127.5
 
-        rval = np.clip(rval,-1.,1.)
+        rval = np.clip(rval, -1., 1.)
 
         return rval
 
-    def adjust_to_be_viewed_with(self, X, orig, per_example = False):
+    def adjust_to_be_viewed_with(self, X, orig, per_example=False):
         """
         .. todo::
 
             WRITEME
         """
-        # if the scale is set based on the data, display X oring the scale determined
-        # by orig
-        # assumes no preprocessing. need to make preprocessors mark the new ranges
+        # if the scale is set based on the data, display X oring the
+        # scale determined by orig
+        # assumes no preprocessing. need to make preprocessors mark
+        # the new ranges
         rval = X.copy()
 
-        #patch old pkl files
-        if not hasattr(self,'center'):
+        # patch old pkl files
+        if not hasattr(self, 'center'):
             self.center = False
-        if not hasattr(self,'rescale'):
+        if not hasattr(self, 'rescale'):
             self.rescale = False
-        if not hasattr(self,'gcn'):
+        if not hasattr(self, 'gcn'):
             self.gcn = False
 
         if self.gcn is not None:
             rval = X.copy()
             if per_example:
                 for i in xrange(rval.shape[0]):
-                    rval[i,:] /= np.abs(orig[i,:]).max()
+                    rval[i, :] /= np.abs(orig[i, :]).max()
             else:
                 rval /= np.abs(orig).max()
             rval = np.clip(rval, -1., 1.)
@@ -209,7 +217,7 @@ class CIFAR10(dense_design_matrix.DenseDesignMatrix):
         if not self.rescale:
             rval /= 127.5
 
-        rval = np.clip(rval,-1.,1.)
+        rval = np.clip(rval, -1., 1.)
 
         return rval
 
@@ -219,9 +227,10 @@ class CIFAR10(dense_design_matrix.DenseDesignMatrix):
 
             WRITEME
         """
-        return CIFAR10(which_set='test', center=self.center, rescale=self.rescale, gcn=self.gcn,
-                one_hot=self.one_hot, toronto_prepro=self.toronto_prepro, axes=self.axes)
-
+        return CIFAR10(which_set='test', center=self.center,
+                       rescale=self.rescale, gcn=self.gcn,
+                       toronto_prepro=self.toronto_prepro,
+                       axes=self.axes)
 
     @classmethod
     def _unpickle(cls, file):
@@ -232,14 +241,17 @@ class CIFAR10(dense_design_matrix.DenseDesignMatrix):
             class? Whoever wrote it shows up as "unknown" in git blame.
         """
         from pylearn2.utils import string_utils
-        fname = os.path.join(
-                string_utils.preprocess('${PYLEARN2_DATA_PATH}'),
-                'cifar10',
-                'cifar-10-batches-py',
-                file)
+        fname = os.path.join(string_utils.preprocess('${PYLEARN2_DATA_PATH}'),
+                             'cifar10', 'cifar-10-batches-py', file)
         if not os.path.exists(fname):
-            raise IOError(fname+" was not found. You probably need to download "
-                    " the CIFAR-10 dataset from http://www.cs.utoronto.ca/~kriz/cifar.html")
+            raise IOError(fname + " was not found. You probably need to "
+                          "download the CIFAR-10 dataset by using the "
+                          "download script in "
+                          "pylearn2/scripts/datasets/download_cifar10.sh "
+                          "or manually from "
+                          "http://www.cs.utoronto.ca/~kriz/cifar.html")
+        fname = cache.datasetCache.cache_file(fname)
+
         _logger.info('loading file %s' % fname)
         fo = open(fname, 'rb')
         dict = cPickle.load(fo)

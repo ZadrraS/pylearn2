@@ -13,25 +13,36 @@ __authors__ = "Ian Goodfellow"
 __copyright__ = "Copyright 2010-2012, Universite de Montreal"
 __credits__ = ["Ian Goodfellow"]
 __license__ = "3-clause BSD"
-__maintainer__ = "Ian Goodfellow"
-__email__ = "goodfeli@iro"
+__maintainer__ = "LISA Lab"
+__email__ = "pylearn-dev@googlegroups"
+
+import sys
+import logging
+
+from theano.compat import six
 
 from pylearn2.devtools.list_files import list_files
 from pylearn2.utils.shell import run_shell_command
 
-def run_pyflakes(no_warnings = False):
+
+logger = logging.getLogger(__name__)
+
+
+def run_pyflakes(no_warnings=False):
     """
-    .. todo::
+    Return a description of all errors pyflakes finds in Pylearn2.
 
-        WRITEME properly
+    Parameters
+    ----------
+    no_warnings : bool
+        If True, omits pyflakes outputs that don't correspond to actual
+        errors.
 
-    Returns a dictionary mapping pylearn2 .py filepaths
-    to outputs from pyflakes.
-
-    Omits files for which there was no output.
-
-    If no_warnings = True, omits pyflakes outputs that don't
-    correspond to actual errors.
+    Returns
+    -------
+    rval : dict
+        Keys are pylearn2 .py filepaths
+        Values are outputs from pyflakes
     """
 
     files = list_files(".py")
@@ -40,15 +51,16 @@ def run_pyflakes(no_warnings = False):
 
     for filepath in files:
         output, rc = run_shell_command('pyflakes ' + filepath)
-        if 'pyflakes: not found' in output:
+        output = output.decode(sys.getdefaultencoding())
+        if u'pyflakes: not found' in output:
             # The return code alone does not make it possible to detect
             # if pyflakes is present or not. When pyflakes is not present,
             # the return code seems to always be 127, but 127 can also be
             # the result of finding 127 warnings in a file.
             # Therefore, we examine the output instead.
             raise RuntimeError("Couldn't run 'pyflakes " + filepath + "'. "
-                    "Error code returned:" + str(rc)\
-                    + " Output was: " + output)
+                               "Error code returned:" + str(rc) +
+                               " Output was: " + output)
 
         output = _filter(output, no_warnings)
 
@@ -57,43 +69,56 @@ def run_pyflakes(no_warnings = False):
 
     return rval
 
+
 def _filter(output, no_warnings):
     """
     .. todo::
 
         WRITEME
+
+    Parameters
+    ----------
+    output : str
+        The output of pyflakes for a single.py file
+    no_warnings: bool
+        If True, removes lines corresponding to warnings rather than errors
+
+    Returns
+    -------
+    rval : None or str
+        `output` with blank lines and optionally lines corresponding to
+        warnings removed, or, if all lines are removed, returns None.
+        A return value of None indicates that the file is validly formatted.
     """
     lines = output.split('\n')
 
-    lines = [ line for line in lines if line != '' ]
-
+    lines = [line for line in lines
+             if line != '' and line.find("undefined name 'long'") == -1]
 
     if no_warnings:
 
-        lines = [ line for line in lines if
-                line.find("is assigned to but never used") == -1 ]
+        lines = [line for line in lines if
+                 line.find("is assigned to but never used") == -1]
 
-        lines = [ line for line in lines if
-                line.find('imported but unused') == -1 ]
+        lines = [line for line in lines if
+                 line.find('imported but unused') == -1]
 
-        lines = [ line for line in lines if
-                line.find('redefinition of unused ') == -1 ]
-
+        lines = [line for line in lines if
+                 line.find('redefinition of unused ') == -1]
 
     if len(lines) == 0:
         return None
     return '\n'.join(lines)
 
 if __name__ == '__main__':
-    import sys
     if len(sys.argv) > 1:
         no_warnings = bool(sys.argv[1])
     else:
         no_warnings = False
 
-    d = run_pyflakes( no_warnings = no_warnings)
+    d = run_pyflakes(no_warnings=no_warnings)
 
     for key in d:
-        print key +':'
+        logger.info('{0}:'.format(key))
         for l in d[key].split('\n'):
-            print '\t'+l
+            logger.info('\t{0}'.format(l))

@@ -7,7 +7,7 @@ __authors__ = "Ian Goodfellow"
 __copyright__ = "Copyright 2013, Universite de Montreal"
 __credits__ = ["Ian Goodfellow"]
 __license__ = "3-clause BSD"
-__maintainer__ = "Ian Goodfellow"
+__maintainer__ = "LISA Lab"
 
 import numpy as np
 import unittest
@@ -34,7 +34,8 @@ def test_min_zero():
     discard information about the size of the zero buffer.
     """
     mlp = MLP(input_space=VectorSpace(1),
-            layers= [Maxout(layer_name="test_layer", num_units=1, num_pieces = 2,
+            layers= [Maxout(layer_name="test_layer", num_units=1,
+                num_pieces = 2,
             irange=.05, min_zero=True)])
     X = T.matrix()
     output = mlp.fprop(X)
@@ -52,7 +53,8 @@ def test_maxout_basic():
 
     yaml_string = """
     !obj:pylearn2.train.Train {
-        dataset: &train !obj:pylearn2.testing.datasets.random_one_hot_dense_design_matrix {
+        dataset: &train !obj:pylearn2.testing.datasets.random_one_hot_dense_d\
+esign_matrix {
             rng: !obj:numpy.random.RandomState { seed: [2013, 3, 16] },
             num_examples: 12,
             dim: 2,
@@ -84,9 +86,10 @@ def test_maxout_basic():
             nvis: 2,
         },
         algorithm: !obj:pylearn2.training_algorithms.sgd.SGD {
+            learning_rule: !obj:pylearn2.training_algorithms.learning_rule.Mo\
+mentum { init_momentum: 0.5 },
             batch_size: 6,
             learning_rate: .1,
-            init_momentum: .5,
             monitoring_dataset:
                 {
                     'train' : *train
@@ -95,16 +98,18 @@ def test_maxout_basic():
                 input_include_probs: { 'h0' : .8 },
                 input_scales: { 'h0': 1. }
             },
-            termination_criterion: !obj:pylearn2.termination_criteria.EpochCounter {
+            termination_criterion: !obj:pylearn2.termination_criteria.EpochCo\
+unter {
                 max_epochs: 3,
             },
-            update_callbacks: !obj:pylearn2.training_algorithms.sgd.ExponentialDecay {
+            update_callbacks: !obj:pylearn2.training_algorithms.sgd.Exponenti\
+alDecay {
                 decay_factor: 1.000004,
                 min_lr: .000001
             }
         },
         extensions: [
-            !obj:pylearn2.training_algorithms.sgd.MomentumAdjustor {
+            !obj:pylearn2.training_algorithms.learning_rule.MomentumAdjustor {
                 start: 1,
                 saturate: 250,
                 final_momentum: .7
@@ -119,7 +124,8 @@ def test_maxout_basic():
 
 yaml_string_maxout_conv_c01b_basic = """
     !obj:pylearn2.train.Train {
-        dataset: &train !obj:pylearn2.testing.datasets.random_one_hot_topological_dense_design_matrix {
+        dataset: &train !obj:pylearn2.testing.datasets.random_one_hot_topolog\
+ical_dense_design_matrix {
             rng: !obj:numpy.random.RandomState { seed: [2013, 3, 16] },
             shape: &input_shape [10, 10],
             channels: 1,
@@ -184,7 +190,8 @@ yaml_string_maxout_conv_c01b_basic = """
         },
         algorithm: !obj:pylearn2.training_algorithms.sgd.SGD {
             learning_rate: .05,
-            init_momentum: .5,
+            learning_rule: !obj:pylearn2.training_algorithms.learning_rule.Mo\
+mentum { init_momentum: 0.9 },
             monitoring_dataset:
                 {
                     'train': *train
@@ -193,16 +200,18 @@ yaml_string_maxout_conv_c01b_basic = """
                 input_include_probs: { 'h0' : .8 },
                 input_scales: { 'h0': 1. }
             },
-            termination_criterion: !obj:pylearn2.termination_criteria.EpochCounter {
+            termination_criterion: !obj:pylearn2.termination_criteria.EpochCo\
+unter {
                 max_epochs: 3
             },
-            update_callbacks: !obj:pylearn2.training_algorithms.sgd.ExponentialDecay {
+            update_callbacks: !obj:pylearn2.training_algorithms.sgd.Exponenti\
+alDecay {
                 decay_factor: 1.00004,
                 min_lr: .000001
             }
         },
         extensions: [
-            !obj:pylearn2.training_algorithms.sgd.MomentumAdjustor {
+            !obj:pylearn2.training_algorithms.learning_rule.MomentumAdjustor {
                 start: 1,
                 saturate: 250,
                 final_momentum: .7
@@ -216,13 +225,12 @@ yaml_string_maxout_conv_c01b_cifar10 = """
         dataset: &train !obj:pylearn2.datasets.cifar10.CIFAR10 {
             toronto_prepro: True,
             which_set: 'train',
-            one_hot: 1,
             axes: ['c', 0, 1, 'b'],
             start: 0,
             stop: 50000
         },
         model: !obj:pylearn2.models.mlp.MLP {
-            batch_size: 128,
+            batch_size: 100,
             input_space: !obj:pylearn2.space.Conv2DSpace {
                 shape: [32, 32],
                 num_channels: 3,
@@ -255,16 +263,16 @@ yaml_string_maxout_conv_c01b_cifar10 = """
                     ],
         },
         algorithm: !obj:pylearn2.training_algorithms.sgd.SGD {
-            batch_size: 128,
+            learning_rule: !obj:pylearn2.training_algorithms.learning_rule.Mo\
+mentum { init_momentum: 0.9 },
+            batch_size: 100,
             learning_rate: .01,
-            init_momentum: .9,
             monitoring_dataset:
                 {
                     'valid' : !obj:pylearn2.datasets.cifar10.CIFAR10 {
                                   toronto_prepro: True,
                                   axes: ['c', 0, 1, 'b'],
                                   which_set: 'train',
-                                  one_hot: 1,
                                   start: 40000,
                                   stop:  50000
                               },
@@ -272,10 +280,10 @@ yaml_string_maxout_conv_c01b_cifar10 = """
                                   toronto_prepro: True,
                                   axes: ['c', 0, 1, 'b'],
                                   which_set: 'test',
-                                  one_hot: 1,
                               }
                 },
-            termination_criterion: !obj:pylearn2.termination_criteria.EpochCounter {
+            termination_criterion: !obj:pylearn2.termination_criteria.EpochCo\
+unter {
                 max_epochs: 5
             }
         }
@@ -283,6 +291,76 @@ yaml_string_maxout_conv_c01b_cifar10 = """
 
     """
 
+yaml_string_maxout_conv_c01b_cifar10_fast = """
+    !obj:pylearn2.train.Train {
+        dataset: &train !obj:pylearn2.datasets.cifar10.CIFAR10 {
+            toronto_prepro: True,
+            which_set: 'train',
+            axes: ['c', 0, 1, 'b'],
+            start: 0,
+            stop: 100
+        },
+        model: !obj:pylearn2.models.mlp.MLP {
+            batch_size: 100,
+            input_space: !obj:pylearn2.space.Conv2DSpace {
+                shape: [32, 32],
+                num_channels: 3,
+                axes: ['c', 0, 1, 'b'],
+            },
+            layers: [
+                     !obj:pylearn2.models.maxout.MaxoutConvC01B {
+                         layer_name: 'conv1',
+                         pad: 0,
+                         num_channels: 16,
+                         num_pieces: 1,
+                         kernel_shape: [5, 5],
+                         pool_shape: [3, 3],
+                         pool_stride: [2, 2],
+                         irange: .01,
+                         min_zero: False,
+                         W_lr_scale: 1.,
+                         b_lr_scale: 2.,
+                         tied_b: True,
+                         max_kernel_norm: 9.9,
+                     },
+                     !obj:pylearn2.models.mlp.Softmax {
+                         layer_name: 'y',
+                         n_classes: 10,
+                         istdev: .03,
+                         W_lr_scale: 1.,
+                         b_lr_scale: 2.,
+                         max_col_norm: 8.5
+                     }
+                    ],
+        },
+        algorithm: !obj:pylearn2.training_algorithms.sgd.SGD {
+            learning_rule: !obj:pylearn2.training_algorithms.learning_rule.Mo\
+momentum: { init_momentum: 0.9 },
+            batch_size: 100,
+            learning_rate: .01,
+            monitoring_dataset:
+                {
+                    'valid' : !obj:pylearn2.datasets.cifar10.CIFAR10 {
+                                  toronto_prepro: True,
+                                  axes: ['c', 0, 1, 'b'],
+                                  which_set: 'train',
+                                  start: 40000,
+                                  stop:  40100
+                              },
+                    'test'  : !obj:pylearn2.datasets.cifar10.CIFAR10 {
+                                  toronto_prepro: True,
+                                  axes: ['c', 0, 1, 'b'],
+                                  which_set: 'test',
+                              }
+                },
+            termination_criterion: !obj:pylearn2.termination_criteria.EpochCo\
+unter {
+                max_epochs: 5
+            }
+        }
+    }
+
+    """
 
 class TestMaxout(unittest.TestCase):
     def test_maxout_conv_c01b_basic_err(self):
@@ -325,7 +403,10 @@ class TestMaxout(unittest.TestCase):
             cuda.use('gpu')
             config.floatX = 'float32'
             try:
-                train = yaml_parse.load(yaml_string_maxout_conv_c01b_cifar10)
+                if config.mode in ['DEBUG_MODE', 'DebugMode']:
+                    train = yaml_parse.load(yaml_string_maxout_conv_c01b_cifar10_fast)
+                else:
+                    train = yaml_parse.load(yaml_string_maxout_conv_c01b_cifar10)
             except NoDataPathError:
                 raise SkipTest("PYLEARN2_DATA_PATH environment variable "
                                "not defined")
@@ -333,10 +414,14 @@ class TestMaxout(unittest.TestCase):
             # Check that the performance is close to the expected one:
             # test_y_misclass: 0.3777000308036804
             misclass_chan = train.algorithm.monitor.channels['test_y_misclass']
-            assert misclass_chan.val_record[-1] < 0.38
+            if not config.mode in ['DEBUG_MODE', 'DebugMode']:
+                assert misclass_chan.val_record[-1] < 0.38, \
+                    ("misclass_chan.val_record[-1] = %g" %
+                     misclass_chan.val_record[-1])
             # test_y_nll: 1.0978516340255737
             nll_chan = train.algorithm.monitor.channels['test_y_nll']
-            assert nll_chan.val_record[-1] < 1.1
+            if not config.mode in ['DEBUG_MODE', 'DebugMode']:
+                assert nll_chan.val_record[-1] < 1.1
         finally:
             config.floatX = old_floatX
             cuda.unuse()

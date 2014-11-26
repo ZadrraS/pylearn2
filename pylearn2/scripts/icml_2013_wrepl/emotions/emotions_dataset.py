@@ -7,7 +7,7 @@ __authors__ = "Ian Goodfellow"
 __copyright__ = "Copyright 2013, Universite de Montreal"
 __credits__ = ["Ian Goodfellow"]
 __license__ = "3-clause BSD"
-__maintainer__ = "Ian Goodfellow"
+__maintainer__ = "LISA Lab"
 
 import csv
 import numpy as np
@@ -79,7 +79,7 @@ class EmotionsDataset(DenseDesignMatrix):
 
         view_converter = DefaultViewConverter(shape=[48,48,1], axes=axes)
 
-        super(EmotionsDataset, self).__init__(X=X, y=y, view_converter=view_converter)
+        super(EmotionsDataset, self).__init__(X=X, y=y, y_labels=7, view_converter=view_converter)
 
         if preprocessor:
             preprocessor.apply(self, can_fit=fit_preprocessor)
@@ -131,11 +131,6 @@ class EmotionsDataset(DenseDesignMatrix):
         X = np.asarray(X_list).astype('float32')
         if expect_labels:
             y = np.asarray(y_list)
-
-            one_hot = np.zeros((y.shape[0],7),dtype='float32')
-            for i in xrange(y.shape[0]):
-                one_hot[i,y[i]] = 1.
-            y = one_hot
         else:
             y = None
 

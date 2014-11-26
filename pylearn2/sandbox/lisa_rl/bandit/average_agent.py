@@ -2,11 +2,11 @@ __author__ = "Ian Goodfellow"
 
 import numpy as np
 
-from theano.compat.python2x import OrderedDict
 from theano import function
 from theano import tensor as T
 
 
+from pylearn2.compat import OrderedDict
 from pylearn2.sandbox.lisa_rl.bandit.agent import Agent
 from pylearn2.utils import sharedX
 
@@ -16,6 +16,10 @@ class AverageAgent(Agent):
     arm with the highest estimated reward. The estimated reward is just
     based on the average of all observations from that arm. If an arm
     has not been tried, the estimated reward is given by init_reward_estimate.
+
+    .. todo::
+
+        WRITEME : parameter list
     """
 
     def __init__(self, init_reward_estimate, num_arms):

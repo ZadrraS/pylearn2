@@ -54,12 +54,16 @@ def global_contrast_normalize(X, scale=1., subtract_mean=True, use_std=False,
     `sqrt_bias` = 10 and `use_std = True` (and defaults for all other
     parameters) corresponds to the preprocessing used in [1].
 
+    References
+    ----------
     .. [1] A. Coates, H. Lee and A. Ng. "An Analysis of Single-Layer
        Networks in Unsupervised Feature Learning". AISTATS 14, 2011.
        http://www.stanford.edu/~acoates/papers/coatesleeng_aistats_2011.pdf
     """
     assert X.ndim == 2, "X.ndim must be 2"
     scale = float(scale)
+    assert scale >= min_divisor
+
     # Note: this is per-example mean across pixels, not the
     # per-pixel mean across examples. So it is perfectly fine
     # to subtract this without worrying about whether the current
@@ -69,13 +73,22 @@ def global_contrast_normalize(X, scale=1., subtract_mean=True, use_std=False,
         X = X - mean[:, numpy.newaxis]  # Makes a copy.
     else:
         X = X.copy()
+
     if use_std:
         # ddof=1 simulates MATLAB's var() behaviour, which is what Adam
         # Coates' code does.
-        normalizers = numpy.sqrt(sqrt_bias + X.var(axis=1, ddof=1)) / scale
+        ddof = 1
+
+        # If we don't do this, X.var will return nan.
+        if X.shape[1] == 1:
+            ddof = 0
+
+        normalizers = numpy.sqrt(sqrt_bias + X.var(axis=1, ddof=ddof)) / scale
     else:
         normalizers = numpy.sqrt(sqrt_bias + (X ** 2).sum(axis=1)) / scale
+
     # Don't normalize by anything too small.
     normalizers[normalizers < min_divisor] = 1.
+
     X /= normalizers[:, numpy.newaxis]  # Does not make a copy.
     return X

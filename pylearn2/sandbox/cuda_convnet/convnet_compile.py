@@ -11,9 +11,10 @@ from theano.gof.compilelock import get_lock, release_lock
 from theano.sandbox import cuda
 from theano.sandbox.cuda import nvcc_compiler
 
-from shared_code import this_dir
+from .shared_code import this_dir
 
 import pylearn2.sandbox.cuda_convnet.pthreads
+from pylearn2.sandbox.cuda_convnet import check_cuda
 
 _logger_name = 'pylearn2.sandbox.cuda_convnet.convnet_compile'
 _logger = logging.getLogger(_logger_name)
@@ -35,6 +36,8 @@ libcuda_convnet_so = os.path.join(cuda_convnet_loc,
 
 
 def convnet_available():
+    check_cuda(check_enabled=False)
+
     # If already compiled, OK
     if convnet_available.compiled:
         _logger.debug('already compiled')
@@ -147,7 +150,7 @@ def convnet_compile():
                             libs = ['cublas', config.pthreads.lib] if config.pthreads.lib else ['cublas'],
                             preargs = ['-O3'] + args,
                             py_module=False)
-                except Exception, e:
+                except Exception as e:
                     _logger.error("Failed to compile %s %s: %s",
                                   os.path.join(cuda_convnet_loc, 'mod.cu'), cuda_convnet_file_sources, str(e))
                     return False
@@ -167,7 +170,7 @@ def convnet_compile():
         else:
             try:
                 os.symlink(cuda_convnet_so, libcuda_convnet_so)
-            except OSError, e:
+            except OSError as e:
                 # This may happen for instance when running multiple
                 # concurrent jobs, if two of them try to create the
                 # symlink simultaneously.

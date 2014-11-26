@@ -5,6 +5,7 @@ of a function or class constructor.
 import functools
 import inspect
 import types
+from pylearn2.utils.exc import reraise_as
 from pylearn2.utils.string_utils import match
 
 def check_call_arguments(to_call, kwargs):
@@ -15,10 +16,10 @@ def check_call_arguments(to_call, kwargs):
     Parameters
     ----------
     to_call : class or callable
-        Function or class to examine (in the case of classes, the constructor \
-        call signature is analyzed)
+        Function or class to examine (in the case of classes, the constructor
+        call signature is analyzed).
     kwargs : dict
-        Dictionary mapping parameter names (including positional arguments) \
+        Dictionary mapping parameter names (including positional arguments)
         to proposed values.
     """
     if 'self' in kwargs.keys():
@@ -88,10 +89,10 @@ def checked_call(to_call, kwargs):
     Parameters
     ----------
     to_call : class or callable
-        Function or class to examine (in the case of classes, the constructor \
-        call signature is analyzed)
+        Function or class to examine (in the case of classes, the constructor
+        call signature is analyzed).
     kwargs : dict
-        Dictionary mapping parameter names (including positional arguments) \
+        Dictionary mapping parameter names (including positional arguments)
         to proposed values.
     """
     try:
@@ -125,13 +126,14 @@ def sensible_argument_errors(func):
 
             if len(bad_keywords) > 0:
                 bad = ', '.join(bad_keywords)
-                raise TypeError('%s() does not support the following '
-                                'keywords: %s' % (str(func.func_name), bad))
+                reraise_as(TypeError('%s() does not support the following '
+                                     'keywords: %s' % (str(func.func_name),
+                                                       bad)))
             allargsgot = set(list(kwargs.keys()) + list(posargs.keys()))
             numrequired = len(argnames) - len(defaults)
             diff = list(set(argnames[:numrequired]) - allargsgot)
             if len(diff) > 0:
-                raise TypeError('%s() did not get required args: %s' %
-                                (str(func.func_name), ', '.join(diff)))
+                reraise_as(TypeError('%s() did not get required args: %s' %
+                                     (str(func.func_name), ', '.join(diff))))
             raise
     return wrapped_func

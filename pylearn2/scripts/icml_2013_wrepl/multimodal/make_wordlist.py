@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import os
 from pylearn2.utils.string_utils import preprocess
 base = '${PYLEARN2_DATA_PATH}/esp_game/ESPGame100k/labels/'
@@ -10,7 +12,7 @@ words = {}
 for i, path in enumerate(paths):
 
     if i % 1000 == 0:
-        print i
+        print(i)
     path = base+path
     f = open(path,'r')
     lines = f.readlines()
@@ -23,7 +25,7 @@ for i, path in enumerate(paths):
 
 ranked_words = sorted(words.keys(), key=lambda x: -words[x])
 
-ranked_words = [word + '\n' for word in ranked_words[0:4000]]
+ranked_words = [word_ + '\n' for word_ in ranked_words[0:4000]]
 
 
 f = open('wordlist.txt','w')

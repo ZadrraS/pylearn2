@@ -17,7 +17,7 @@ def compiled_theano_function(fn):
     Parameters
     ----------
     fn : bound method
-        Method that takes exactly one parameter (i.e. `self`). This method \
+        Method that takes exactly one parameter (i.e. `self`). This method
         should return a compiled Theano function when called.
 
     Notes
@@ -58,11 +58,11 @@ def compiled_theano_function(fn):
     @functools.wraps(fn)
     def wrapped(self):
         try:
-            func = self._compiled_functions[fn.func_name]
+            func = self._compiled_functions[fn.__name__]
         except (AttributeError, KeyError):
             if not hasattr(self, '_compiled_functions'):
                 self._compiled_functions = {}
-            self._compiled_functions[fn.func_name] = func = fn(self)
+            self._compiled_functions[fn.__name__] = func = fn(self)
         return func
     return property(wrapped)
 

@@ -8,18 +8,12 @@ __authors__ = "Li Yao"
 import theano
 import theano.sparse
 from theano import tensor
-from pylearn2.autoencoder import DenoisingAutoencoder
+from pylearn2.models.autoencoder import DenoisingAutoencoder
 from pylearn2.space import VectorSpace
 from theano.sparse.sandbox.sp2 import sampling_dot
 
 from pylearn2.expr.basic import theano_norms
 
-if 0:
-    print 'WARNING: using SLOW rng'
-    RandomStreams = tensor.shared_randomstreams.RandomStreams
-else:
-    import theano.sandbox.rng_mrg
-    RandomStreams = theano.sandbox.rng_mrg.MRG_RandomStreams
 
 class Linear(object):
     """
@@ -27,6 +21,7 @@ class Linear(object):
 
         WRITEME
     """
+
     def __call__(self, X_before_activation):
         """
         .. todo::
@@ -42,6 +37,7 @@ class Rectify(object):
 
         WRITEME
     """
+
     def __call__(self, X_before_activation):
         # X_before_activation is linear inputs of hidden units, dense
         return X_before_activation * (X_before_activation > 0)
@@ -51,20 +47,26 @@ class SparseDenoisingAutoencoder(DenoisingAutoencoder):
     Denoising autoencoder working with only sparse inputs and efficient
     reconstruction sampling
 
+    Parameters
+    ----------
+    corruptor : WRITEME
+    nvis : WRITEME
+    nhid : WRITEME
+    act_enc : WRITEME
+    act_dec : WRITEME
+    tied_weights : WRITEME
+    irange : WRITEME
+    rng : WRITEME
+
     References
     ----------
     Y. Dauphin, X. Glorot, Y. Bengio. Large-Scale Learning of Embeddings with
     Reconstruction Sampling. In Proceedings of the 28th International
     Conference on Machine Learning (ICML 2011).
     """
+
     def __init__(self, corruptor, nvis, nhid, act_enc, act_dec,
                  tied_weights=False, irange=1e-3, rng=9001):
-        """
-        .. todo::
-
-            WRITEME
-        """
-
         # sampling dot only supports tied weights
         assert tied_weights == True
 
@@ -110,17 +112,17 @@ class SparseDenoisingAutoencoder(DenoisingAutoencoder):
         Parameters
         ----------
         hiddens : tensor_like or list of tensor_likes
-            Theano symbolic (or list thereof) representing the input \
-            minibatch(es) to be encoded. Assumed to be 2-tensors, with the \
-            first dimension indexing training examples and the second \
+            Theano symbolic (or list thereof) representing the input
+            minibatch(es) to be encoded. Assumed to be 2-tensors, with the
+            first dimension indexing training examples and the second
             indexing data dimensions.
-        pattern: dense matrix, the same shape of the minibatch inputs
+        pattern : dense matrix, the same shape of the minibatch inputs
             0/1 like matrix specifying how to reconstruct inputs.
 
         Returns
         -------
         decoded : tensor_like or list of tensor_like
-            Theano symbolic (or list thereof) representing the corresponding \
+            Theano symbolic (or list thereof) representing the corresponding
             minibatch(es) after decoding.
         """
         if self.act_dec is None:
@@ -138,8 +140,8 @@ class SparseDenoisingAutoencoder(DenoisingAutoencoder):
         Parameters
         ----------
         inputs : theano sparse variable
-
-        pattern: binary dense matrix specifying which part of inputs should be reconstructed
+        pattern : binary dense matrix
+            Specifies which part of inputs should be reconstructed
         """
         # corrupt the inputs
         inputs_dense = theano.sparse.dense_from_sparse(inputs)
@@ -184,7 +186,11 @@ class SparseDenoisingAutoencoder(DenoisingAutoencoder):
         return self.hidbias + theano.sparse.dot(x, self.weights)
 
     def get_monitoring_channels(self, V):
+        """
+        .. todo::
 
+            WRITEME
+        """
         vb, hb, weights = self.get_params()
         norms = theano_norms(weights)
         return {'W_min': tensor.min(weights),

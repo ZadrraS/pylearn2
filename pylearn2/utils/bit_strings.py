@@ -7,6 +7,7 @@ __email__ = "wardefar@iro"
 __maintainer__ = "David Warde-Farley"
 
 import numpy as np
+from theano.compat.six.moves import xrange
 
 
 def all_bit_strings(bits, dtype='uint8'):
@@ -24,7 +25,7 @@ def all_bit_strings(bits, dtype='uint8'):
     Returns
     -------
     bit_strings : ndarray, shape (2 ** bits, bits)
-        The numbers from 0 to 2 ** bits - 1 as binary numbers, most \
+        The numbers from 0 to 2 ** bits - 1 as binary numbers, most
         significant bit first.
 
     Notes
@@ -32,5 +33,5 @@ def all_bit_strings(bits, dtype='uint8'):
     Obviously the memory requirements of this are exponential in the first
     argument, so use with caution.
     """
-    return np.array([map(int, np.binary_repr(i, width=bits))
+    return np.array([[int(x) for x in np.binary_repr(i, width=bits)]
                      for i in xrange(0, 2 ** bits)], dtype=dtype)

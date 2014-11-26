@@ -3,19 +3,29 @@ Several utilities to evaluate an ALC on the dataset, to iterate over
 minibatches from a dataset, or to merge three data with given proportions
 """
 # Standard library imports
+import logging
 import os
 import functools
 from itertools import repeat
+import warnings
 
 # Third-party imports
 import numpy
 import scipy
+from theano.compat.six.moves import reduce, xrange
 import theano
-from matplotlib import pyplot
-from mpl_toolkits.mplot3d import Axes3D
+try:
+    from matplotlib import pyplot
+    from mpl_toolkits.mplot3d import Axes3D
+except ImportError:
+    warnings.warn("Could not import some dependencies.")
 
 # Local imports
-from pylearn2.datasets.utlc import get_constant, sharedX
+from pylearn2.utils.rng import make_np_rng
+
+
+logger = logging.getLogger(__name__)
+
 
 ##################################################
 # 3D Visualization
@@ -57,7 +67,7 @@ def save_plot(repr, path, name="figure.pdf", title="features"):
     # Save the produces figure
     filename = os.path.join(path, name)
     pyplot.savefig(filename, format="pdf")
-    print '... figure saved: %s' % filename
+    logger.info('... figure saved: {0}'.format(filename))
 
 ##################################################
 # Features or examples filtering
@@ -106,11 +116,11 @@ def nonzero_features(data, combine=None):
     Parameters
     ----------
     data : list of matrices
-        List of data matrices, either in sparse format or not. They must have \
-        the same number of features (column number).
-    combine : function
-        A function to combine elementwise which features to keep. Default \
-        keeps the intersection of each non-zero columns
+        List of data matrices, either in sparse format or not.
+        They must have the same number of features (column number).
+    combine : function, optional
+        A function to combine elementwise which features to keep.
+        Default keeps the intersection of each non-zero columns.
 
     Returns
     -------
@@ -137,15 +147,15 @@ def nonzero_features(data, combine=None):
 def filter_nonzero(data, combine=None):
     """
     Filter non-zero features of data according to a certain combining function
-    
+
     Parameters
     ----------
     data : list of matrices
-        List of data matrices, either in sparse format or not. They must have \
-        the same number of features (column number).
+        List of data matrices, either in sparse format or not.
+        They must have the same number of features (column number).
     combine : function
-        A function to combine elementwise which features to keep. Default \
-        keeps the intersection of each non-zero columns
+        A function to combine elementwise which features to keep.
+        Default keeps the intersection of each non-zero columns.
 
     Returns
     -------
@@ -165,13 +175,16 @@ class BatchIterator(object):
     """
     Builds an iterator object that can be used to go through the minibatches
     of a dataset, with respect to the given proportions in conf
-    """
-    def __init__(self, dataset, set_proba, batch_size, seed=300):
-        """
-        .. todo::
 
-            WRITEME
-        """
+    Parameters
+    ----------
+    dataset : WRITEME
+    set_proba : WRITEME
+    batch_size : WRITEME
+    seed : WRITEME
+    """
+
+    def __init__(self, dataset, set_proba, batch_size, seed=300):
         # Local shortcuts for array operations
         flo = numpy.floor
         sub = numpy.subtract
@@ -212,13 +225,11 @@ class BatchIterator(object):
 
         # Use a deterministic seed
         self.seed = seed
-        rng = numpy.random.RandomState(seed=self.seed)
+        rng = make_np_rng(seed, which_method="permutation")
         self.permut = rng.permutation(index_tab)
 
     def __iter__(self):
-        """
-        Generator function to iterate through all minibatches
-        """
+        """Generator function to iterate through all minibatches"""
         counter = [0, 0, 0]
         for chosen in self.permut:
             # Retrieve minibatch from chosen set
@@ -232,15 +243,11 @@ class BatchIterator(object):
             yield minibatch
 
     def __len__(self):
-        """
-        Return length of the weighted union
-        """
+        """Return length of the weighted union"""
         return self.length
 
     def by_index(self):
-        """
-        Same generator as __iter__, but yield only the chosen indexes
-        """
+        """Same generator as __iter__, but yield only the chosen indexes"""
         counter = [0, 0, 0]
         for chosen in self.permut:
             index = counter[chosen]
@@ -252,42 +259,13 @@ class BatchIterator(object):
 ##################################################
 
 
-def blend(dataset, set_proba, **kwargs):
-    """
-    Randomized blending of datasets in data according to parameters in conf
-
-    Parameters
-    ----------
-    set_probe : WRITEME
-
-    Returns
-    -------
-    WRITEME
-    """
-    iterator = BatchIterator(dataset, set_proba, 1, **kwargs)
-    nrow = len(iterator)
-    ncol = get_constant(dataset[0].shape[1])
-    if (scipy.sparse.issparse(dataset[0])):
-        # Special case: the dataset is sparse
-        blocks = [[batch] for batch in iterator]
-        return scipy.sparse.bmat(blocks, 'csr')
-
-    else:
-        # Normal case: the dataset is dense
-        row = 0
-        array = numpy.empty((nrow, ncol), dataset[0].dtype)
-        for batch in iterator:
-            array[row] = batch
-            row += 1
-
-        return sharedX(array, borrow=True)
-
-def minibatch_map(fn, batch_size, input_data, output_data=None, output_width=None):
+def minibatch_map(fn, batch_size, input_data, output_data=None,
+                  output_width=None):
     """
     Apply a function on input_data, one minibatch at a time.
 
-    Storage for the output can be provided. If it is the case, it should have
-    appropriate size.
+    Storage for the output can be provided. If it is the case,
+    it should have appropriate size.
 
     If output_data is not provided, then output_width should be specified.
 

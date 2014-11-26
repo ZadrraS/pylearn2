@@ -7,15 +7,19 @@ To read about different sparse formats, see U{http://www-users.cs.umn.edu/~saad/
 """
 #### COPIED FROM hpu/icml09/sp.py
 
+import logging
 import numpy
 from scipy import sparse as scipy_sparse
+from theano.compat.six.moves import xrange
 
 import theano
 import theano.sparse
 from theano import sparse, gof, Op, tensor
-from theano.printing import Print
 
 raise ImportError("THIS OLD CODE'S TESTS ARE BIT-ROTTEN")
+
+logger = logging.getLogger(__name__)
+
 
 class RasterOrders(object):
     """
@@ -124,7 +128,9 @@ def sp_extract_patches(IR, IC, KR, KC, CH,
                                 j = orow*OC*T + ocol*T + t
                                 rval[i, j] = 1
                             except IndexError:
-                                print rval.shape, i, j, IR, IC, KR, KC, OR, OC
+                                logger.error('{0} {1} {2} {3} {4} {5} {6} {7} '
+                                             '{8}'.format(rval.shape, i, j, IR,
+                                                          IC, KR, KC, OR, OC))
                                 raise
     return rval
 
@@ -227,12 +233,14 @@ class Remove0(Op):
         """
         return gof.Apply(self, [x], [x.type()])
 
-    def perform(self,node, (x,), (z,)):
+    def perform(self,node, xs, zs):
         """
         .. todo::
 
             WRITEME
         """
+        x = xs[0]
+        z = zs[0]
         if x.format != 'csc':
             raise TypeError('Remove0 only works on csc matrices')
 
@@ -256,28 +264,27 @@ class Remove0(Op):
 
         z[0] = sparse.csc_matrix((new_data, new_indices, new_indptr), (M,N))
 
-    def grad(self, (x,), (gz,)):
+    def grad(self, x, gz):
         """
         .. todo::
 
             WRITEME
         """
-        return [gz]
+        return [gz[0]]
 
 remove0 = Remove0()
 
 class EnsureSortedIndices(Op):
     """
     Remove explicit zeros from a sparse matrix, and resort indices
+
+    Parameters
+    ----------
+    inplace : WRITEME
     """
     inplace=False
 
     def __init__(self, inplace):
-        """
-        .. todo::
-
-            WRITEME
-        """
         self.inplace=inplace
         if self.inplace:
             self.view_map = {0:[0]}
@@ -290,21 +297,21 @@ class EnsureSortedIndices(Op):
         """
         return gof.Apply(self, [x], [x.type()])
 
-    def perform(self,node, (x,), (z,)):
+    def perform(self,node, xs, zs):
         """
         .. todo::
 
             WRITEME
         """
-        z[0] = x.ensure_sorted_indices(inplace=self.inplace)
+        zs[0][0] = xs[0].ensure_sorted_indices(inplace=self.inplace)
 
-    def grad(self, (x,), (gz,)):
+    def grad(self, xs, gz):
         """
         .. todo::
 
             WRITEME
         """
-        return [gz]
+        return [gz[0]]
 
 ensure_sorted_indices = EnsureSortedIndices(inplace=False)
 
@@ -355,10 +362,10 @@ def max_pool(images, imgshp, maxpoolshp):
     indices, indptr, spmat_shape, sptype, outshp = \
             convolution_indices.conv_eval(imgshp, maxpoolshp, maxpoolshp, mode='valid')
 
-    print 'XXXXXXXXXXXXXXXX MAX POOLING LAYER XXXXXXXXXXXXXXXXXXXX'
-    print 'imgshp = ', imgshp
-    print 'maxpoolshp = ', maxpoolshp
-    print 'outshp = ', outshp
+    logger.info('XXXXXXXXXXXXXXXX MAX POOLING LAYER XXXXXXXXXXXXXXXXXXXX')
+    logger.info('imgshp = {0}'.format(imgshp))
+    logger.info('maxpoolshp = {0}'.format(maxpoolshp))
+    logger.info('outshp = {0}'.format(outshp))
 
     # build sparse matrix, then generate stack of image patches
     csc = theano.sparse.CSM(sptype)(N.ones(indices.size), indices, indptr, spmat_shape)
@@ -388,14 +395,15 @@ class ConvolutionIndices(Op):
     """
 
     @staticmethod
-    def sparse_eval(inshp, kshp, nkern, (dx,dy)=(1,1), mode='valid'):
+    def sparse_eval(inshp, kshp, nkern, offset=(1, 1), mode='valid'):
         """
         .. todo::
 
             WRITEME
         """
         # STALE
-        return convolution_indices.evaluate(inshp,kshp,(dx,dy),nkern,mode=mode,ws=False)
+        return convolution_indices.evaluate(inshp, kshp, offset, nkern,
+                                            mode=mode, ws=False)
 
     @staticmethod
     def conv_eval(IR, IC, KR, KC, C, subsample=(1,1), mode='valid'):
@@ -409,7 +417,7 @@ class ConvolutionIndices(Op):
 
     # img_shape and ker_shape are (height,width)
     @staticmethod
-    def evaluate(imshp,kshp, (dx,dy)=(1,1), nkern=1, mode='valid', ws=True):
+    def evaluate(imshp, kshp, offset=(1, 1), nkern=1, mode='valid', ws=True):
         """
         Build a sparse matrix which can be used for performing...
         * convolution: in this case, the dot product of this matrix with the
@@ -431,7 +439,7 @@ class ConvolutionIndices(Op):
             'full' full convolution obtained by zero-padding the input
         ws : bool
             True if weight sharing, False otherwise
-        (dx,dy) : tuple of int
+        offset : tuple of int
             Offset parameter. In the case of no weight sharing, gives the \
             pixel offset between two receptive fields. With weight sharing \
             gives the offset between the top-left pixels of the generated \
@@ -444,6 +452,7 @@ class ConvolutionIndices(Op):
             the image which will be the result of filtering.
         """
         N = numpy
+        dx, dy = offset
 
         # inshp contains either 2 entries (height,width) or 3 (nfeatures,h,w)
         # in the first case, default nfeatures to 1
@@ -563,7 +572,8 @@ class ConvolutionIndices(Op):
         assert spmat.format == 'csc'
         sptype = 'csc'
         #sptype = 'csr' if mode=='valid' else 'csc'
-        if 0 and mode=='valid':
+        use_csr_type = 0
+        if use_csr_type and mode=='valid':
             spmat = spmat.tocsr()
 
         rval = (spmat.indices[:spmat.size],
@@ -572,13 +582,15 @@ class ConvolutionIndices(Op):
 
         return rval
 
-    def perform(self, node, (inshp, kshp),\
-                (out_indices, out_indptr, spmat_shape)):
+    def perform(self, node, shape, out):
         """
         .. todo::
 
             WRITEME
         """
+        inshp, kshp = shape
+        out_indices, out_indptr, spmat_shape = out
+
         indices, indptr, spmatshp, outshp = self.evaluate(inshp, kshp)
         out_indices[0] = indices
         out_indptr[0] = indptr

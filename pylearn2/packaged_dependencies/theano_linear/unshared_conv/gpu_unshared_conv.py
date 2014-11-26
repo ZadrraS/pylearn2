@@ -1,6 +1,8 @@
 """
 WRITEME
 """
+from __future__ import print_function
+
 import inspect
 import os
 import StringIO
@@ -10,6 +12,7 @@ from theano.sandbox.cuda import CudaNdarrayType
 from theano.gof import local_optimizer
 from theano.sandbox.cuda.opt import register_opt
 from theano.sandbox.cuda import gpu_from_host, host_from_gpu
+from theano.sandbox.cuda.basic_ops import gpu_contiguous
 
 from .unshared_conv import FilterActs
 from .unshared_conv import WeightActs
@@ -50,13 +53,13 @@ class Base(theano.Op):
     .. todo::
 
         WRITEME
+
+    Parameters
+    ----------
+    module_stride : WRITEME
+    partial_sum : WRITEME
     """
     def __init__(self, module_stride, partial_sum):
-        """
-        .. todo::
-
-            WRITEME
-        """
         self.module_stride = module_stride
         self.partial_sum = partial_sum
 
@@ -162,7 +165,7 @@ class GpuFilterActs(Base):
         moduleStride = str(self.module_stride)
         sio = StringIO.StringIO()
 
-        print >> sio, """
+        print("""
 
         //XXX: actually the rightmost images dimension can be strided
         if (!CudaNdarray_is_c_contiguous(%(images)s))
@@ -279,7 +282,7 @@ class GpuFilterActs(Base):
             }
         } // end bogus scope used for vars
 
-        """
+        """, file=sio)
 
         return sio.getvalue() % locals()
 
@@ -367,7 +370,7 @@ class GpuWeightActs(Base):
 
         sio = StringIO.StringIO()
 
-        print >> sio, """
+        print("""
 
         if (!CudaNdarray_is_c_contiguous(%(images)s))
         {
@@ -401,19 +404,19 @@ class GpuWeightActs(Base):
             %(fail)s;
         }
 
-        if (%(frows)s->nd != 0)
+        if (PyArray_NDIM(%(frows)s) != 0)
         {
             PyErr_Format(PyExc_TypeError,
                 "frows ndim (%%i) must be 0",
-                %(frows)s->nd);
+                PyArray_NDIM(%(frows)s));
             %(fail)s;
         }
 
-        if (%(fcols)s->nd != 0)
+        if (PyArray_NDIM(%(fcols)s) != 0)
         {
             PyErr_Format(PyExc_TypeError,
                 "fcols ndim (%%i) must be 0",
-                %(fcols)s->nd);
+                PyArray_NDIM(%(fcols)s));
             %(fail)s;
         }
 
@@ -434,8 +437,8 @@ class GpuWeightActs(Base):
             int fmodulesR = hrows;
             int fmodulesC = hcols;
             int fcolors = icolors_per_group;
-            int frows = ((dtype_%(frows)s *) (%(frows)s->data))[0];
-            int fcols = ((dtype_%(fcols)s *) (%(fcols)s->data))[0];
+            int frows = ((dtype_%(frows)s *) PyArray_DATA(%(frows)s))[0];
+            int fcols = ((dtype_%(fcols)s *) PyArray_DATA(%(fcols)s))[0];
             int fgroups = hgroups;
             int filters_per_group = hcolors_per_group;
 
@@ -520,7 +523,7 @@ class GpuWeightActs(Base):
             }
         } // end bogus scope used for vars
 
-        """
+        """, file=sio)
 
         return sio.getvalue() % locals()
 
@@ -546,7 +549,7 @@ def insert_gpu_weight_acts(node):
                     partial_sum=1)
             return [host_from_gpu(gpu_weight_acts(
                 gpu_from_host(images),
-                gpu_from_host(hidacts),
+                gpu_contiguous(hidacts),
                 frows,
                 fcols,
                 ))]
@@ -609,7 +612,7 @@ class GpuImgActs(Base):
 
         sio = StringIO.StringIO()
 
-        print >> sio, """
+        print("""
 
         if (!CudaNdarray_is_c_contiguous(%(filters)s))
         {
@@ -643,19 +646,19 @@ class GpuImgActs(Base):
             %(fail)s;
         }
 
-        if (%(irows)s->nd != 0)
+        if (PyArray_NDIM(%(irows)s) != 0)
         {
             PyErr_Format(PyExc_TypeError,
                 "frows ndim (%%i) must be 0",
-                %(irows)s->nd);
+                PyArray_NDIM(%(irows)s));
             %(fail)s;
         }
 
-        if (%(icols)s->nd != 0)
+        if (PyArray_NDIM(%(icols)s) != 0)
         {
             PyErr_Format(PyExc_TypeError,
                 "fcols ndim (%%i) must be 0",
-                %(icols)s->nd);
+                PyArray_NDIM(%(icols)s));
             %(fail)s;
         }
 
@@ -677,8 +680,8 @@ class GpuImgActs(Base):
 
             int igroups           = fgroups;
             int icolors_per_group = fcolors;
-            int irows             = ((dtype_%(irows)s *) (%(irows)s->data))[0];
-            int icols             = ((dtype_%(icols)s *) (%(icols)s->data))[0];
+            int irows             = ((dtype_%(irows)s *) PyArray_DATA(%(irows)s))[0];
+            int icols             = ((dtype_%(icols)s *) PyArray_DATA(%(icols)s))[0];
             int icount            = hcount;
 
 
@@ -762,7 +765,7 @@ class GpuImgActs(Base):
             }
         } // end bogus scope used for vars
 
-        """
+        """, file=sio)
 
         return sio.getvalue() % locals()
 
@@ -784,7 +787,7 @@ def insert_gpu_img_acts(node):
                     partial_sum=1)
             return [host_from_gpu(gpu_img_acts(
                 gpu_from_host(filters),
-                gpu_from_host(hidacts),
+                gpu_contiguous(hidacts),
                 irows,
                 icols,
                 ))]
