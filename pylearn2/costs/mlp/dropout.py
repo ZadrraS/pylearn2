@@ -7,7 +7,7 @@ __copyright__ = "Copyright 2013, Universite de Montreal"
 from functools import wraps
 
 from pylearn2.costs.cost import DefaultDataSpecsMixin, Cost
-
+from pylearn2.utils import sharedX
 
 class Dropout(DefaultDataSpecsMixin, Cost):
     """
@@ -61,13 +61,20 @@ class Dropout(DefaultDataSpecsMixin, Cost):
     supervised = True
 
     def __init__(self, default_input_include_prob=.5, input_include_probs=None,
-                 default_input_scale=2., input_scales=None, per_example=True):
+                 default_input_scale=2., input_scales=None, per_example=True, recalculate_scales = False):
 
         if input_include_probs is None:
             input_include_probs = {}
 
         if input_scales is None:
             input_scales = {}
+
+        for layer_name in input_include_probs:
+            if recalculate_scales:
+                input_scales[layer_name] = 1.0 / input_include_probs[layer_name]
+
+            input_include_probs[layer_name] = sharedX(input_include_probs[layer_name])
+            input_scales[layer_name] = sharedX(input_scales[layer_name])
 
         self.__dict__.update(locals())
         del self.self

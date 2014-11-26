@@ -1091,7 +1091,49 @@ class Downsample(object):
             X = X.reshape([X.shape[0], X.shape[1], X.shape[2], X.shape[4]])
         dataset.set_topological_view(X)
 
+class DownsampleNORB(Preprocessor):
+    def __init__(self, sampling_factor):
+        self.sampling_factor = sampling_factor
 
+    def apply(self, dataset, can_fit=False):
+        X = dataset.get_topological_view()
+        #X /= 255.0
+        from pylearn2.utils.image import pil_from_ndarray
+        from pylearn2.utils.image import ndarray_from_pil
+        from pylearn2.utils.image import rescale
+        new_shape = (X.shape[0], X.shape[1], int(X.shape[2]/self.sampling_factor[0]), int(X.shape[3]/self.sampling_factor[1]), X.shape[4])
+        X_new = numpy.ndarray(new_shape)
+        for i in range(X.shape[0]):
+            X_new[i, 0, :, :] = rescale(X[i, 0, :, :]/255.0, (new_shape[2], new_shape[3]))
+            X_new[i, 1, :, :] = rescale(X[i, 1, :, :]/255.0, (new_shape[2], new_shape[3]))
+
+        #dataset.set_topological_view(X_new, axes=dataset.view_converter.axes)
+        X = X.reshape(-1, 2 * numpy.prod(self.original_image_shape))
+        dataset.__init__(X=X_new, y = dataset.y, view_converter = dataset.view_converter)
+'''
+class DownsampleNORB(Preprocessor):
+    def __init__(self, sampling_factor):
+        self.sampling_factor = sampling_factor
+
+    def apply(self, dataset, can_fit=False):
+        X = dataset.get_topological_view()
+        X /= 255.0
+        from pylearn2.utils.image import pil_from_ndarray
+        from pylearn2.utils.image import ndarray_from_pil
+        from pylearn2.utils.image import rescale
+        new_shape = (X.shape[0], X.shape[1], int(X.shape[2]/self.sampling_factor[0]), int(X.shape[3]/self.sampling_factor[1]), X.shape[4])
+        X_new = numpy.ndarray(new_shape)
+        for i in range(X.shape[0]):
+            
+            img_i = pil_from_ndarray(X[i, :, :, :])
+            img_i = img_i.resize((img_i.size[0]/self.sampling_factor[0], img_i.size[1]/self.sampling_factor[1]), Image.BILINEAR)
+            X_new[i, :, :, :] = ndarray_from_pil(img_i)
+            
+            X_new[i, :, :, :] = rescale(X[i, :, :, :], (new_shape[1], new_shape[2]))
+            X_new[i, :, :, :] = rescale(X[i, :, :, :], (new_shape[1], new_shape[2]))
+
+        dataset.set_topological_view(X_new)
+'''
 class GlobalContrastNormalization(Preprocessor):
 
     """
