@@ -62,8 +62,9 @@ def get_weights_report(model_path=None,
         raise ValueError('rescale=' + rescale +
                          ", must be 'none', 'global', or 'individual'")
 
-    if isinstance(model.layers[0], mlp_models.PretrainedLayer):
-        model = model.layer_content
+    if hasattr(model, 'layers'):
+        if isinstance(model.layers[0], mlp_models.PretrainedLayer):
+            model = model.layers[0].layer_content
 
     if isinstance(model, dict):
         #assume this was a saved matlab dictionary

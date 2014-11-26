@@ -161,7 +161,6 @@ class Momentum(LearningRule):
 
         return updates
 
-
 class MomentumAdjustor(TrainExtension):
     """
     A TrainExtension that implements a linear momentum schedule.
@@ -227,6 +226,109 @@ class MomentumAdjustor(TrainExtension):
         if alpha > 1.:
             alpha = 1.
         return self._init_momentum * (1 - alpha) + alpha * self.final_momentum
+
+class MomentumExponentialAdjustor(TrainExtension):
+    """
+    A TrainExtension that implements a linear momentum schedule.
+
+    Parameters
+    ----------
+    final_momentum : float
+        The momentum coefficient to use at the end of learning.
+    start : int
+        The epoch on which to start growing the momentum coefficient.
+    saturate : int
+        The epoch on which the moment should reach its final value.
+    """
+    def __init__(self, final_momentum, start, coef):
+        self.__dict__.update(locals())
+        del self.self
+        self._initialized = False
+        self._count = 0
+
+    def on_monitor(self, model, dataset, algorithm):
+        """
+        Updates the momentum according to the linear schedule.
+
+        Parameters
+        ----------
+        model : pylearn2.models.Model
+            The model to which the training algorithm is applied.
+        dataset : pylearn2.datasets.Dataset
+            The dataset to which the model is applied.
+        algorithm : pylearn2.training_algorithms.TrainingAlgorithm
+            Describes how gradients should be updated.
+        """
+        if hasattr(algorithm, 'learning_rule'):
+            momentum = algorithm.learning_rule.momentum
+        else:
+            # TODO: remove once training_algorithm.sgd.SGD(init_momentum)
+            # is officially deprecated.
+            momentum = algorithm.momentum
+
+        self._count += 1
+        if self._count >= self.start:
+            momentum_value = momentum.get_value() * self.coef
+            if momentum_value > self.final_momentum:
+                momentum_value = self.final_momentum
+
+            momentum.set_value(np.cast[config.floatX](momentum_value))
+
+class MomentumRampUpDown(TrainExtension):
+    def __init__(self, saturate_max_epoch, saturate_max_momentum, saturate_min_epoch, saturate_min_momentum, start_epoch, keep_max_epochs):
+        self.__dict__.update(locals())
+        del self.self
+        self._initialized = False
+        self._count = 0
+        self._max_saturated = False
+        self._max_saturated_epoch = None
+
+    def on_monitor(self, model, dataset, algorithm):
+        if hasattr(algorithm, 'learning_rule'):
+            momentum = algorithm.learning_rule.momentum
+        else:
+            # TODO: remove once training_algorithm.sgd.SGD(init_momentum)
+            # is officially deprecated.
+            momentum = algorithm.momentum
+
+        if not self._initialized:
+            self._init_momentum = momentum.get_value()
+            self._initialized = True
+        self._count += 1
+        momentum.set_value(np.cast[config.floatX](self.current_momentum()))
+
+    def current_momentum(self):
+        """Returns the momentum currently desired by the schedule."""
+        
+        if self._count >= self.start_epoch and not self._max_saturated:
+            rampup_ratio = self.saturate_max_epoch - self.start_epoch
+            alpha = float(self._count - self.start_epoch) / float(rampup_ratio)
+            if self._count - self.start_epoch == rampup_ratio:
+                self._max_saturated = True
+                self._max_saturated_epoch = self._count
+
+            if alpha < 0.0:
+                alpha = 0.0
+            if alpha > 1.0:
+                alpha = 1.0
+
+            return self._init_momentum * (1 - alpha) + alpha * self.saturate_max_momentum
+        elif self._max_saturated and self._count - self._max_saturated_epoch >= self.keep_max_epochs:
+            rampdown_start_epoch = self._max_saturated_epoch + self.keep_max_epochs
+            rampdown_ratio = self.saturate_min_epoch - rampdown_start_epoch
+            alpha = float(self._count - rampdown_start_epoch) / float(rampdown_ratio)
+
+            if alpha < 0.0:
+                alpha = 0.0
+            if alpha > 1.0:
+                alpha = 1.0
+
+            return self.saturate_max_momentum * (1 - alpha) + alpha * self.saturate_min_momentum
+        else:
+            return self.saturate_max_momentum
+        
+
+        
 
 
 class AdaDelta(LearningRule):
