@@ -2521,17 +2521,17 @@ class RectifiedLinear(Linear):
     @wraps(Layer.get_layer_monitoring_channels)
     def get_layer_monitoring_channels(self, state_below=None,
                                     state=None, targets=None):
-        #rval = super(RectifiedLinear, self).get_layer_monitoring_channels(state_below = state_below, state = state, targets = targets)
-        rval = OrderedDict([])
-        rval['percentage_activated'] = T.cast(T.neq(T.zeros_like(state), state).mean(), dtype = state.dtype)
+        rval = super(RectifiedLinear, self).get_layer_monitoring_channels(state_below = state_below, state = state, targets = targets)
+        #rval = OrderedDict([])
+        #rval['percentage_activated'] = T.cast(T.neq(T.zeros_like(state), state).mean(), dtype = state.dtype)
 
-        active_neurons = T.neq(0.0, state).sum(axis = 0)
-        rval['percentage_never_active'] = T.cast(T.le(active_neurons, 0.0).mean(), dtype = state.dtype)
-        rval['percentage_10%_active'] = T.cast(T.le(active_neurons, state.shape[0] * 0.1).mean(), dtype = state.dtype)
-        rval['percentage_20%_active'] = T.cast(T.le(active_neurons, state.shape[0] * 0.2).mean(), dtype = state.dtype)
-        rval['percentage_50%_active'] = T.cast(T.le(active_neurons, state.shape[0] * 0.5).mean(), dtype = state.dtype)
+        #active_neurons = T.neq(0.0, state).sum(axis = 0)
+        #rval['percentage_never_active'] = T.cast(T.le(active_neurons, 0.0).mean(), dtype = state.dtype)
+        #rval['percentage_10%_active'] = T.cast(T.le(active_neurons, state.shape[0] * 0.1).mean(), dtype = state.dtype)
+        #rval['percentage_20%_active'] = T.cast(T.le(active_neurons, state.shape[0] * 0.2).mean(), dtype = state.dtype)
+        #rval['percentage_50%_active'] = T.cast(T.le(active_neurons, state.shape[0] * 0.5).mean(), dtype = state.dtype)
 
-        rval['mean_activation'] = T.cast(state.mean(), dtype = state.dtype)
+        #rval['mean_activation'] = T.cast(state.mean(), dtype = state.dtype)
         return rval
 
 class LinearizingReLU(Linear):
@@ -3130,7 +3130,7 @@ class ConvElemwise(Layer):
                                             num_channels=self.output_channels,
                                             axes=('b', 'c', 0, 1))
 
-        logger.info('Output space: {0}'.format(self.output_space.shape))
+        logger.info(self.layer_name + ' Output space: {0}'.format(self.output_space.shape))
 
     @wraps(Layer.set_input_space)
     def set_input_space(self, space):
@@ -3179,8 +3179,8 @@ class ConvElemwise(Layer):
 
         self.b.name = self.layer_name + '_b'
 
-        logger.info('Input shape: {0}'.format(self.input_space.shape))
-        logger.info('Detector space: {0}'.format(self.detector_space.shape))
+        logger.info(self.layer_name + ' Input shape: {0}'.format(self.input_space.shape))
+        logger.info(self.layer_name + ' Detector space: {0}'.format(self.detector_space.shape))
 
         self.initialize_output_space()
 
@@ -4640,8 +4640,8 @@ class PaddingLayer(Layer):
             num_channels=self.input_space.num_channels,
             axes=self.input_space.axes)
 
-        logger.info('Input shape: {0}'.format(self.input_space.shape))
-        logger.info('Output shape: {0}'.format(self.output_space.shape))
+        logger.info(self.layer_name + ' Input shape: {0}'.format(self.input_space.shape))
+        logger.info(self.layer_name + ' Output shape: {0}'.format(self.output_space.shape))
 
     @wraps(Layer.get_params)
     def get_params(self):
@@ -4657,7 +4657,7 @@ class PaddingLayer(Layer):
         self.force_batch_size = batch_size
 
 class ConvPoolingLayer(Layer):
-    def __init__(self, pool_type, pool_shape, pool_stride):
+    def __init__(self, layer_name, pool_type, pool_shape, pool_stride):
         super(ConvPoolingLayer, self).__init__()
         self.__dict__.update(locals())
         del self.self
@@ -4667,12 +4667,34 @@ class ConvPoolingLayer(Layer):
         self.input_space = space
         shape_x = self.input_space.shape[0] - (self.pool_shape[0] - 1) / self.pool_stride[0]
         shape_y = self.input_space.shape[1] - (self.pool_shape[1] - 1) / self.pool_stride[1]
-        self.output_space = Conv2DSpace(shape = (shape_x, shape_y),
+        #self.output_space = Conv2DSpace(shape = (shape_x, shape_y),
+        #                                num_channels=self.input_space.num_channels,
+        #                                axes=('b', 'c', 0, 1))
+
+        dummy_batch_size = self.mlp.batch_size
+
+        if dummy_batch_size is None:
+            dummy_batch_size = 2
+        dummy_detector = sharedX(self.input_space.get_origin_batch(dummy_batch_size))
+
+        if self.pool_type == 'max':
+            dummy_p = max_pool(bc01=dummy_detector,
+                               pool_shape=self.pool_shape,
+                               pool_stride=self.pool_stride,
+                               image_shape=self.input_space.shape)
+        elif self.pool_type == 'mean':
+            dummy_p = mean_pool(bc01=dummy_detector,
+                                pool_shape=self.pool_shape,
+                                pool_stride=self.pool_stride,
+                                image_shape=self.input_space.shape)
+        dummy_p = dummy_p.eval()
+        self.output_space = Conv2DSpace(shape=[dummy_p.shape[2],
+                                               dummy_p.shape[3]],
                                         num_channels=self.input_space.num_channels,
                                         axes=('b', 'c', 0, 1))
 
-        logger.info('Input shape: {0}'.format(self.input_space.shape))
-        logger.info('Output shape: {0}'.format(self.output_space.shape))
+        logger.info(self.layer_name + ' Input shape: {0} '.format(self.input_space.shape) + "channels: " + str(self.input_space.num_channels))
+        logger.info(self.layer_name + ' Output shape: {0} '.format(self.output_space.shape) + "channels: " + str(self.output_space.num_channels))
 
     @wraps(Layer.fprop)
     def fprop(self, state_below):
@@ -4695,9 +4717,13 @@ class ConvPoolingLayer(Layer):
 
         return p
 
+    @wraps(Layer.get_params)
+    def get_params(self):
+        return []
+
 
 class InceptionLayer(Layer):
-    def __init__(self, layer_name, irange, nonlinearity, layer_channels, reduction_channels, max_kernel_norm = None, output_normalization = None):
+    def __init__(self, layer_name, irange, nonlinearity, output_channels, reduction_channels, max_kernel_norm = None, output_normalization = None):
         super(InceptionLayer, self).__init__()
         self.__dict__.update(locals())
         del self.self
@@ -4713,24 +4739,26 @@ class InceptionLayer(Layer):
             self.padding_layers[filter_name] = PaddingLayer(layer_name = self.layer_name + "_pad" + filter_name, pad = pad)
 
         self.dim_reduction_layers = {}
-        for filter_name in ["3x3", "5x5", "3x3Pool"]:
+        for filter_name in ["3x3", "5x5"]:
             self.dim_reduction_layers[filter_name] = ConvElemwise(layer_name = self.layer_name + "_reduce" + filter_name, output_channels = reduction_channels[filter_name], kernel_shape = [1, 1], kernel_stride = [1, 1],
+                                            pool_type = None, irange = irange, nonlinearity = nonlinearity, max_kernel_norm = max_kernel_norm)
+        self.dim_reduction_layers["3x3Pool"] = ConvElemwise(layer_name = self.layer_name + "_reduce" + filter_name, output_channels = output_channels["3x3Pool"], kernel_shape = [1, 1], kernel_stride = [1, 1],
                                             pool_type = None, irange = irange, nonlinearity = nonlinearity, max_kernel_norm = max_kernel_norm)
         self.conv_layers = {}
         for kernel_shape in [1, 1], [3, 3], [5, 5]:
             filter_name = str(kernel_shape[0]) + "x" + str(kernel_shape[1])
             self.conv_layers[filter_name] = ConvElemwise(layer_name = self.layer_name + "_conv" + filter_name, 
-                            output_channels = layer_channels[filter_name], kernel_shape = kernel_shape, irange = irange, nonlinearity = nonlinearity, max_kernel_norm = max_kernel_norm)
+                            output_channels = output_channels[filter_name], kernel_shape = kernel_shape, irange = irange, nonlinearity = nonlinearity, max_kernel_norm = max_kernel_norm)
 
-        self.pool_layer = ConvPoolingLayer(pool_type = "max", pool_shape = [3, 3], pool_stride = [1, 1])
+        self.pool_layer = ConvPoolingLayer(layer_name = self.layer_name + "3x3Pool", pool_type = "max", pool_shape = [3, 3], pool_stride = [1, 1])
 
     @wraps(Layer.set_input_space)
     def set_input_space(self, space):
         self.input_space = space
 
-        num_out_channels = self.reduction_channels["3x3Pool"]
-        for conv_layer_name in self.layer_channels:
-            num_out_channels += self.layer_channels[conv_layer_name]
+        num_out_channels = 0 #self.reduction_channels["3x3Pool"]
+        for conv_layer_name in self.output_channels:
+            num_out_channels += self.output_channels[conv_layer_name]
 
         self.output_space = Conv2DSpace(shape=self.input_space.shape, num_channels=num_out_channels, axes=('b', 'c', 0, 1))
 
@@ -4846,7 +4874,6 @@ class InceptionLayer(Layer):
 
 
         joined_shape = (self.batch_size, self.output_space.num_channels, self.output_space.shape[0], self.output_space.shape[1])
-        #print "JNTSHP:", joined_shape
         channel_joined_output = sharedX(np.zeros(joined_shape))
         
         current_channel_num = 0
