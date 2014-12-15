@@ -9,7 +9,6 @@ __email__ = "pylearn-dev@googlegroups"
 from collections import defaultdict
 from theano.compat.six.moves import zip as izip_no_length_check
 import numpy as np
-import warnings
 
 from theano.compat import six
 from theano import tensor as T
@@ -342,6 +341,7 @@ class Model(object):
         """
         Deprecated method. Callers should call modify_updates instead.
         Subclasses should override _modify_updates instead.
+        This method may be removed on or after 2015-05-25.
 
         Parameters
         ----------
@@ -386,7 +386,7 @@ class Model(object):
 
         self._ensure_extensions()
         for extension in self.extensions:
-            extension.post_modify_updates(updates)
+            extension.post_modify_updates(updates, self)
 
     def _modify_updates(self, updates):
         """
@@ -593,6 +593,7 @@ class Model(object):
         Returns the number of visible units of the model.
         Deprecated; this assumes the model operates on a vector.
         Use get_input_space instead.
+        This method may be removed on or after 2015-05-25.
         """
         raise NotImplementedError()
 
@@ -601,6 +602,7 @@ class Model(object):
         Returns the number of visible units of the model.
         Deprecated; this assumes the model operates on a vector.
         Use get_input_space instead.
+        This method may be removed on or after 2015-05-25.
         """
         raise NotImplementedError()
 

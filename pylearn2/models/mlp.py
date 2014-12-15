@@ -27,6 +27,7 @@ from pylearn2.costs.mlp import Default
 from pylearn2.expr.probabilistic_max_pooling import max_pool_channels
 from pylearn2.linear import conv2d
 from pylearn2.linear.matrixmul import MatrixMul
+from pylearn2.model_extensions.norm_constraint import MaxL2FilterNorm
 from pylearn2.models.model import Model
 from pylearn2.monitor import get_monitor_doc
 from pylearn2.expr.nnet import pseudoinverse_softmax_numpy
@@ -1145,6 +1146,9 @@ class Softmax(Layer):
 
         super(Softmax, self).__init__()
 
+        if max_col_norm is not None:
+            self.extensions.append(MaxL2FilterNorm(max_col_norm))
+
         if non_redundant:
             if init_bias_target_marginals:
                 msg = ("init_bias_target_marginals currently only works "
@@ -1477,14 +1481,6 @@ class Softmax(Layer):
                 desired_norms = T.clip(row_norms, 0, self.max_row_norm)
                 scales = desired_norms / (1e-7 + row_norms)
                 updates[W] = updated_W * scales.dimshuffle(0, 'x')
-        if self.max_col_norm is not None:
-            assert self.max_row_norm is None
-            W = self.W
-            if W in updates:
-                updated_W = updates[W]
-                col_norms = T.sqrt(T.sum(T.sqr(updated_W), axis=0))
-                desired_norms = T.clip(col_norms, 0, self.max_col_norm)
-                updates[W] = updated_W * (desired_norms / (1e-7 + col_norms))
 
 
 class SoftmaxPool(Layer):
@@ -4420,8 +4416,8 @@ class FlattenerLayer(Layer):
 
     Parameters
     ----------
-    raw_layer : WRITEME
-        WRITEME
+    raw_layer : Layer
+        Layer that FlattenerLayer wraps.
     """
 
     def __init__(self, raw_layer):
@@ -4448,13 +4444,29 @@ class FlattenerLayer(Layer):
     @wraps(Layer.get_layer_monitoring_channels)
     def get_layer_monitoring_channels(self, state_below=None,
                                       state=None, targets=None):
+
+        raw_space = self.raw_layer.get_output_space()
+
+        if isinstance(raw_space, CompositeSpace):
+            # Pick apart the Join that fprop used to make state.
+            assert hasattr(state, 'owner')
+            owner = state.owner
+            assert owner is not None
+            assert str(owner.op) == 'Join'
+            # First input to join op in the axis.
+            raw_state = tuple(owner.inputs[1:])
+            raw_space.validate(raw_state)
+            state = raw_state
+        else:
+            # Format state as layer output space.
+            state = self.get_output_space().format_as(state, raw_space)
+
         if targets is not None:
             targets = self.get_target_space().format_as(
                 targets, self.raw_layer.get_target_space())
         return self.raw_layer.get_layer_monitoring_channels(
             state_below=state_below,
-            state=self.get_output_space().format_as(
-                state, self.raw_layer.get_output_space()),
+            state=state,
             targets=targets
         )
 
