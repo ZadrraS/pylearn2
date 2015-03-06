@@ -2,10 +2,12 @@
 Unit tests for ./preprocessing.py
 """
 
+import copy
 import numpy as np
 
 from theano import config
 import theano
+from theano.tests.unittest_tools import assert_allclose
 
 from pylearn2.utils import as_floatX
 from pylearn2.utils import isfinite
@@ -16,7 +18,8 @@ from pylearn2.datasets.preprocessing import (GlobalContrastNormalization,
                                              ReassembleGridPatches,
                                              LeCunLCN,
                                              RGB_YUV,
-                                             ZCA)
+                                             ZCA,
+                                             PCA)
 
 
 class testGlobalContrastNormalization:
@@ -212,6 +215,29 @@ def test_zca():
     assert is_identity(np.dot(preprocessor.P_, preprocessor.inv_P_))
 
 
+def test_zca_inverse():
+    """
+    Calculates the inverse of X with numpy.linalg.inv if inv_P_ is not stored
+    """
+
+    def test(store_inverse):
+        rng = np.random.RandomState([1, 2, 3])
+        X = as_floatX(rng.randn(15, 10))
+        preprocessed_X = copy.copy(X)
+        preprocessor = ZCA(store_inverse=store_inverse)
+
+        dataset = DenseDesignMatrix(X=preprocessed_X,
+                                    preprocessor=preprocessor,
+                                    fit_preprocessor=True)
+
+        preprocessed_X = dataset.get_design_matrix()
+
+        assert_allclose(X, preprocessor.inverse(preprocessed_X))
+
+    test(store_inverse=True)
+    test(store_inverse=False)
+
+
 def test_zca_dtypes():
     """
     Confirm that ZCA.fit works regardless of dtype of data and config.floatX
@@ -228,3 +254,59 @@ def test_zca_dtypes():
                 preprocessor.fit(X)
     finally:
         config.floatX = orig_floatX
+
+
+class testPCA:
+    """
+    Tests for PCA preprocessor
+    """
+    def setup(self):
+        rng = np.random.RandomState([1, 2, 3])
+        self.dataset = DenseDesignMatrix(X=as_floatX(rng.randn(15, 10)),
+                                         y=as_floatX(rng.randn(15, 1)))
+        self.num_components = self.dataset.get_design_matrix().shape[1] - 1
+
+    def test_apply_no_whiten(self):
+        """
+        Confirms that PCA has decorrelated the input dataset and
+        principal components are arranged in decreasing order by variance
+        """
+        # sut is an abbreviation for System Under Test
+        sut = PCA(self.num_components)
+        sut.apply(self.dataset, True)
+        cm = np.cov(self.dataset.get_design_matrix().T)  # covariance matrix
+
+        # testing whether the covariance matrix is a diagonal one
+        np.testing.assert_almost_equal(cm * (np.ones(cm.shape[0]) -
+                                       np.eye(cm.shape[0])),
+                                       np.zeros((cm.shape[0], cm.shape[0])))
+
+        # testing whether the eigenvalues are in decreasing order
+        assert (np.diag(cm)[:-1] > np.diag(cm)[1:]).all()
+
+    def test_apply_whiten(self):
+        """
+        Confirms that PCA has decorrelated the input dataset and
+        variance is the same along all principal components and equal to one
+         """
+        sut = PCA(self.num_components, whiten=True)
+        sut.apply(self.dataset, True)
+        cm = np.cov(self.dataset.get_design_matrix().T)  # covariance matrix
+
+        # testing whether the covariance matrix is a diagonal one
+        np.testing.assert_almost_equal(cm * (np.ones(cm.shape[0]) -
+                                       np.eye(cm.shape[0])),
+                                       np.zeros((cm.shape[0], cm.shape[0])))
+
+        # testing whether the eigenvalues are all ones
+        np.testing.assert_almost_equal(np.diag(cm), np.ones(cm.shape[0]))
+
+    def test_apply_reduce_num_components(self):
+        """
+        Checks whether PCA performs dimensionality reduction
+        """
+        sut = PCA(self.num_components - 1, whiten=True)
+        sut.apply(self.dataset, True)
+
+        assert self.dataset.get_design_matrix().shape[1] ==\
+            self.num_components - 1
