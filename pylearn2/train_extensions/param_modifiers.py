@@ -181,22 +181,23 @@ class DropoutActivationLinearScaler(TrainExtension):
         channels = monitor.channels
 
         for i in range(1, len(model.layers)):
-            channel_name = self.estimate_set + "_" + model.layers[i - 1].layer_name + "_percentage_activated"
-            channel = channels[channel_name]
-            val_record = channel.val_record
-            last_activation_estimate = val_record[-1]
+            if model.layers[i].layer_name in algorithm.cost.input_include_probs:
+                channel_name = self.estimate_set + "_" + model.layers[i - 1].layer_name + "_percentage_activated"
+                channel = channels[channel_name]
+                val_record = channel.val_record
+                last_activation_estimate = val_record[-1]
 
-            dropout_include_prob = self.target_act_fraction.get_value() / last_activation_estimate
-            if dropout_include_prob < self.min_incl_prob:
-                dropout_include_prob = self.min_incl_prob
-            elif dropout_include_prob > self.max_incl_prob:
-                dropout_include_prob = self.max_incl_prob
-            dropout_scale = 1.0 / dropout_include_prob
+                dropout_include_prob = self.target_act_fraction.get_value() / last_activation_estimate
+                if dropout_include_prob < self.min_incl_prob:
+                    dropout_include_prob = self.min_incl_prob
+                elif dropout_include_prob > self.max_incl_prob:
+                    dropout_include_prob = self.max_incl_prob
+                dropout_scale = 1.0 / dropout_include_prob
 
-            #algorithm.cost.input_include_probs[layer.layer_name] = dropout_include_prob
-            #algorithm.cost.input_scales[layer.layer_name] = dropout_scale
-            algorithm.cost.input_include_probs[model.layers[i].layer_name].set_value(np.cast[config.floatX](dropout_include_prob))
-            algorithm.cost.input_scales[model.layers[i].layer_name].set_value(np.cast[config.floatX](dropout_scale))
+                #algorithm.cost.input_include_probs[layer.layer_name] = dropout_include_prob
+                #algorithm.cost.input_scales[layer.layer_name] = dropout_scale
+                algorithm.cost.input_include_probs[model.layers[i].layer_name].set_value(np.cast[config.floatX](dropout_include_prob))
+                algorithm.cost.input_scales[model.layers[i].layer_name].set_value(np.cast[config.floatX](dropout_scale))
 
         act_frac_val = self.target_act_fraction.get_value()
         act_frac_val += self.decay_factor
@@ -384,12 +385,13 @@ class DropoutLinearAnnealer(TrainExtension):
     @functools.wraps(TrainExtension.on_monitor)
     def on_monitor(self, model, dataset, algorithm):
         for i in range(0, len(model.layers)):
-            dropout_prob = algorithm.cost.input_include_probs[model.layers[i].layer_name].get_value()
-            dropout_prob += self.decay_factor
-            if dropout_prob > self.max_incl_prob:
-                dropout_prob = self.max_incl_prob
-            algorithm.cost.input_include_probs[model.layers[i].layer_name].set_value(np.cast[config.floatX](dropout_prob))
-            algorithm.cost.input_scales[model.layers[i].layer_name].set_value(np.cast[config.floatX](1.0 / dropout_prob))
+            if model.layers[i].layer_name in algorithm.cost.input_include_probs:
+                dropout_prob = algorithm.cost.input_include_probs[model.layers[i].layer_name].get_value()
+                dropout_prob += self.decay_factor
+                if dropout_prob > self.max_incl_prob:
+                    dropout_prob = self.max_incl_prob
+                algorithm.cost.input_include_probs[model.layers[i].layer_name].set_value(np.cast[config.floatX](dropout_prob))
+                algorithm.cost.input_scales[model.layers[i].layer_name].set_value(np.cast[config.floatX](1.0 / dropout_prob))
 
 class DropoutLinearMeanActivationSetter(TrainExtension):
     def __init__(self, min_keep_prob = 0.4, max_keep_prob = 0.8, estimate_set = "train"):
@@ -471,7 +473,8 @@ class DropoutExponentialAnnealer(TrainExtension):
         if self.scale_learning_rate:
             drop_product = 0.0
             for i in range(0, len(model.layers)):
-                drop_product += algorithm.cost.input_include_probs[model.layers[i].layer_name].get_value()
+                if model.layers[i].layer_name in algorithm.cost.input_include_probs:
+                    drop_product += algorithm.cost.input_include_probs[model.layers[i].layer_name].get_value()
             
             drop_product /= len(model.layers)
             model.layers[-1].W_lr_scale = drop_product * drop_product
@@ -482,17 +485,19 @@ class DropoutExponentialAnnealer(TrainExtension):
         if self.keep_input_constant:
             start_it = 1
         for i in range(start_it, len(model.layers)):
-            dropout_prob = algorithm.cost.input_include_probs[model.layers[i].layer_name].get_value()
-            dropout_prob *= self.decay_factor
-            if dropout_prob > self.max_incl_prob:
-                dropout_prob = self.max_incl_prob
-            algorithm.cost.input_include_probs[model.layers[i].layer_name].set_value(np.cast[config.floatX](dropout_prob))
-            algorithm.cost.input_scales[model.layers[i].layer_name].set_value(np.cast[config.floatX](1.0 / dropout_prob))
+            if model.layers[i].layer_name in algorithm.cost.input_include_probs:
+                dropout_prob = algorithm.cost.input_include_probs[model.layers[i].layer_name].get_value()
+                dropout_prob *= self.decay_factor
+                if dropout_prob > self.max_incl_prob:
+                    dropout_prob = self.max_incl_prob
+                algorithm.cost.input_include_probs[model.layers[i].layer_name].set_value(np.cast[config.floatX](dropout_prob))
+                algorithm.cost.input_scales[model.layers[i].layer_name].set_value(np.cast[config.floatX](1.0 / dropout_prob))
 
         if self.scale_learning_rate:
             drop_product = 0.0
             for i in range(0, len(model.layers)):
-                drop_product += algorithm.cost.input_include_probs[model.layers[i].layer_name].get_value()
+                if model.layers[i].layer_name in algorithm.cost.input_include_probs:
+                    drop_product += algorithm.cost.input_include_probs[model.layers[i].layer_name].get_value()
 
             drop_product /= len(model.layers)
             model.layers[-1].W_lr_scale = drop_product * drop_product
