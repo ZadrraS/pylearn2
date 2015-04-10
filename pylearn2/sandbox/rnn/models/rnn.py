@@ -44,9 +44,10 @@ class RNN(MLP):
                  layer_name=None, **kwargs):
         input_source = self.add_mask_source(input_space, input_source)
         self.use_monitoring_channels = kwargs.pop('use_monitoring_channels', 0)
-        super(RNN, self).__init__(layers, batch_size, input_space,
-                                  input_source, nvis, seed, layer_name,
-                                  **kwargs)
+        super(RNN, self).__init__(layers=layers, batch_size=batch_size,
+                                  input_space=input_space,
+                                  input_source=input_source, nvis=nvis,
+                                  seed=seed, layer_name=layer_name, **kwargs)
         self.theano_rng = make_theano_rng(int(self.rng.randint(2 ** 30)),
                                           which_method=["normal", "uniform"])
 
@@ -422,12 +423,13 @@ class LSTM(Recurrent):
         The name of the layer. All layers in an MLP must have a unique name.
     irange : float
         Initializes each weight randomly in U(-irange, irange)
-    output : slice, list of integers or integer, optional
+    indices : slice, list of integers or integer, optional
         If specified this layer will return only the given hidden
         states. If an integer is given, it will not return a
         SequenceSpace. Otherwise, it will return a SequenceSpace of
         fixed length. Note that a SequenceSpace of fixed length
         can be flattened by using the FlattenerLayer.
+        Note: For now only [-1] is supported.
     irange : float
     init_bias : float
     forget_gate_init_bias : float
@@ -617,12 +619,13 @@ class GRU(Recurrent):
         The name of the layer. All layers in an MLP must have a unique name.
     irange : float
         Initializes each weight randomly in U(-irange, irange)
-    output : slice, list of integers or integer, optional
+    indices : slice, list of integers or integer, optional
         If specified this layer will return only the given hidden
         states. If an integer is given, it will not return a
         SequenceSpace. Otherwise, it will return a SequenceSpace of
         fixed length. Note that a SequenceSpace of fixed length
         can be flattened by using the FlattenerLayer.
+        Note: For now only [-1] is supported.
     irange : float
     init_bias : float
     reset_gate_init_bias: float
