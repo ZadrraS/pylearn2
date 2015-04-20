@@ -152,21 +152,21 @@ class DropoutActivationLinearScaler(TrainExtension):
         dropout_include_prob = {}
         dropout_scale = {}
         for layer_name in algorithm.cost.input_include_probs:
+            if layer_name in algorithm.cost.input_include_probs:
+                channel_name = self.estimate_set + "_" + layer_name
+                monitor.add_channel(
+                    name=channel_name + "_dropout_inc_prob",
+                    ipt=None,
+                    val=algorithm.cost.input_include_probs[layer_name],
+                    data_specs=(NullSpace(), ''),
+                    dataset=dataset)
 
-            channel_name = self.estimate_set + "_" + layer_name
-            monitor.add_channel(
-                name=channel_name + "_dropout_inc_prob",
-                ipt=None,
-                val=algorithm.cost.input_include_probs[layer_name],
-                data_specs=(NullSpace(), ''),
-                dataset=dataset)
-
-            monitor.add_channel(
-                name=channel_name + "_dropout_scale",
-                ipt=None,
-                val=algorithm.cost.input_scales[layer_name],
-                data_specs=(NullSpace(), ''),
-                dataset=dataset)
+                monitor.add_channel(
+                    name=channel_name + "_dropout_scale",
+                    ipt=None,
+                    val=algorithm.cost.input_scales[layer_name],
+                    data_specs=(NullSpace(), ''),
+                    dataset=dataset)
 
         monitor.add_channel(
                 name="target_act_fraction",
@@ -181,8 +181,11 @@ class DropoutActivationLinearScaler(TrainExtension):
         channels = monitor.channels
 
         for i in range(1, len(model.layers)):
-            if model.layers[i].layer_name in algorithm.cost.input_include_probs:
-                channel_name = self.estimate_set + "_" + model.layers[i - 1].layer_name + "_percentage_activated"
+            if model.layers[i].layer_name in algorithm.cost.input_include_probs and model.layers[i].layer_name not in algorithm.cost.constant_layers:
+                l_name = model.layers[i - 1].layer_name
+                if "pad" in l_name:
+                    l_name = model.layers[i - 2].layer_name
+                channel_name = self.estimate_set + "_" + l_name + "_percentage_activated"
                 channel = channels[channel_name]
                 val_record = channel.val_record
                 last_activation_estimate = val_record[-1]
@@ -206,13 +209,14 @@ class DropoutActivationLinearScaler(TrainExtension):
 
         self.target_act_fraction.set_value(np.cast[config.floatX](act_frac_val))
 
-        l0_dropout_include_prob = self.target_act_fraction.get_value() * 2
-        if l0_dropout_include_prob > self.max_incl_prob:
-            l0_dropout_include_prob = self.max_incl_prob
-        elif l0_dropout_include_prob < self.min_incl_prob:
-            l0_dropout_include_prob = self.min_incl_prob
-        algorithm.cost.input_include_probs[model.layers[0].layer_name].set_value(np.cast[config.floatX](l0_dropout_include_prob))
-        algorithm.cost.input_scales[model.layers[0].layer_name].set_value(np.cast[config.floatX](1.0 / l0_dropout_include_prob))
+        if model.layers[0].layer_name not in algorithm.cost.constant_layers:
+            l0_dropout_include_prob = self.target_act_fraction.get_value() * 2
+            if l0_dropout_include_prob > self.max_incl_prob:
+                l0_dropout_include_prob = self.max_incl_prob
+            elif l0_dropout_include_prob < self.min_incl_prob:
+                l0_dropout_include_prob = self.min_incl_prob
+            algorithm.cost.input_include_probs[model.layers[0].layer_name].set_value(np.cast[config.floatX](l0_dropout_include_prob))
+            algorithm.cost.input_scales[model.layers[0].layer_name].set_value(np.cast[config.floatX](1.0 / l0_dropout_include_prob))
 
 class DropoutActivationSetter(TrainExtension):
     def __init__(self, min_incl_prob, max_incl_prob, target_act_fraction, estimate_set = "train"):

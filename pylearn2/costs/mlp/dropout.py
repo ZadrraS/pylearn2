@@ -61,7 +61,7 @@ class Dropout(DefaultDataSpecsMixin, Cost):
     supervised = True
 
     def __init__(self, default_input_include_prob=.5, input_include_probs=None,
-                 default_input_scale=2., input_scales=None, per_example=True, recalculate_scales = False, first_layer_noscale_val = False):
+                 default_input_scale=2., input_scales=None, per_example=True, recalculate_scales = False, first_layer_noscale_val = False, constant_layers = [], non_scaled_values = {}):
 
         if input_include_probs is None:
             input_include_probs = {}
@@ -70,11 +70,16 @@ class Dropout(DefaultDataSpecsMixin, Cost):
             input_scales = {}
 
         for layer_name in input_include_probs:
+            input_scale = input_scales[layer_name]
             if recalculate_scales:
-                if first_layer_noscale_val and layer_name == "conv0" and input_include_probs["conv0"] == 0.8:
-                    input_scales[layer_name] = 1.0
-                else:
-                    input_scales[layer_name] = 1.0 / input_include_probs[layer_name]
+                input_scale = 1.0 / input_include_probs[layer_name]
+                if layer_name in non_scaled_values:
+                    for non_scaled_value in non_scaled_values[layer_name]:
+                        if abs(non_scaled_value - input_include_probs[layer_name]) < 0.001:
+                            input_scale = 1.0
+                            break
+                    
+            input_scales[layer_name] = input_scale
 
             input_include_probs[layer_name] = sharedX(input_include_probs[layer_name])
             input_scales[layer_name] = sharedX(input_scales[layer_name])
