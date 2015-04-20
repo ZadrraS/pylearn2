@@ -180,12 +180,15 @@ class DropoutActivationLinearScaler(TrainExtension):
         monitor = model.monitor
         channels = monitor.channels
 
-        for i in range(1, len(model.layers)):
-            if model.layers[i].layer_name in algorithm.cost.input_include_probs and model.layers[i].layer_name not in algorithm.cost.constant_layers:
-                l_name = model.layers[i - 1].layer_name
-                if "pad" in l_name:
-                    l_name = model.layers[i - 2].layer_name
-                channel_name = self.estimate_set + "_" + l_name + "_percentage_activated"
+        droppable_layer_sequence = []
+        for i in range(0, len(model.layers)):
+            if model.layers[i].layer_name in algorithm.cost.input_include_probs:
+                droppable_layer_sequence.append(model.layers[i].layer_name)
+
+        for i in range(1, len(droppable_layer_sequence)):
+            if droppable_layer_sequence[i] not in algorithm.cost.constant_layers:
+                prev_l_name = droppable_layer_sequence[i - 1]
+                channel_name = self.estimate_set + "_" + prev_l_name + "_percentage_activated"
                 channel = channels[channel_name]
                 val_record = channel.val_record
                 last_activation_estimate = val_record[-1]
@@ -195,12 +198,8 @@ class DropoutActivationLinearScaler(TrainExtension):
                     dropout_include_prob = self.min_incl_prob
                 elif dropout_include_prob > self.max_incl_prob:
                     dropout_include_prob = self.max_incl_prob
-                dropout_scale = 1.0 / dropout_include_prob
 
-                #algorithm.cost.input_include_probs[layer.layer_name] = dropout_include_prob
-                #algorithm.cost.input_scales[layer.layer_name] = dropout_scale
-                algorithm.cost.input_include_probs[model.layers[i].layer_name].set_value(np.cast[config.floatX](dropout_include_prob))
-                algorithm.cost.input_scales[model.layers[i].layer_name].set_value(np.cast[config.floatX](dropout_scale))
+                algorithm.cost.set_dropout_value(droppable_layer_sequence[i], dropout_include_prob)
 
         act_frac_val = self.target_act_fraction.get_value()
         act_frac_val += self.decay_factor
@@ -209,14 +208,14 @@ class DropoutActivationLinearScaler(TrainExtension):
 
         self.target_act_fraction.set_value(np.cast[config.floatX](act_frac_val))
 
-        if model.layers[0].layer_name not in algorithm.cost.constant_layers:
+        if droppable_layer_sequence[0] not in algorithm.cost.constant_layers:
             l0_dropout_include_prob = self.target_act_fraction.get_value() * 2
             if l0_dropout_include_prob > self.max_incl_prob:
                 l0_dropout_include_prob = self.max_incl_prob
             elif l0_dropout_include_prob < self.min_incl_prob:
                 l0_dropout_include_prob = self.min_incl_prob
-            algorithm.cost.input_include_probs[model.layers[0].layer_name].set_value(np.cast[config.floatX](l0_dropout_include_prob))
-            algorithm.cost.input_scales[model.layers[0].layer_name].set_value(np.cast[config.floatX](1.0 / l0_dropout_include_prob))
+
+            algorithm.cost.set_dropout_value(droppable_layer_sequence[0], l0_dropout_include_prob)
 
 class DropoutActivationSetter(TrainExtension):
     def __init__(self, min_incl_prob, max_incl_prob, target_act_fraction, estimate_set = "train"):

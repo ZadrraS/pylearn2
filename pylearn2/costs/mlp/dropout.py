@@ -8,6 +8,8 @@ from functools import wraps
 
 from pylearn2.costs.cost import DefaultDataSpecsMixin, Cost
 from pylearn2.utils import sharedX
+import numpy as np
+from theano import config
 
 class Dropout(DefaultDataSpecsMixin, Cost):
     """
@@ -86,6 +88,11 @@ class Dropout(DefaultDataSpecsMixin, Cost):
 
         self.__dict__.update(locals())
         del self.self
+
+    def set_dropout_value(self, layer_name, dropout_value, recalculate_scale = True):
+        self.input_include_probs[layer_name].set_value(np.cast[config.floatX](dropout_value))
+        if recalculate_scale:
+            self.input_scales[layer_name].set_value(np.cast[config.floatX](1.0 / dropout_value))
 
     def expr(self, model, data, ** kwargs):
         """
